@@ -6,13 +6,13 @@
 %%% @end
 %%% Created : 14. Apr 2014 2:26 PM
 %%%-------------------------------------------------------------------
--module(client).
+-module(ircclient).
 -author("xjurcak").
 
 -include("lookup.hrl").
 
 %% API
--export([start/0, getAccessPoint/0]).
+-export([get_access_point/0, start/0]).
 
 
 
@@ -22,11 +22,12 @@ start() ->
   ok.
 
 
--spec(getAccessPoint() ->
+-spec(get_access_point() ->
   ok | false).
 
-getAccessPoint() ->
+get_access_point() ->
   net_kernel:connect_node(?LOOKUP_SERVER),
-  lookup:get_access_point(),
-  net_kernel:disconnect(?LOOKUP_SERVER).
+  Result = lookup:get_access_point(),
+  net_kernel:disconnect(?LOOKUP_SERVER),
+  Result.
 

@@ -8,4 +8,9 @@
 %%%-------------------------------------------------------------------
 -author("xjurcak").
 -define(LOOKUP_SERVER, 'lookup@XJURCAKO-PC').
--define(LOOKUP_SERVER_GLOBAL, 'lookup').
+-define(LOOKUP_SERVER_GLOBAL, {'lookup', ?LOOKUP_SERVER }).
+
+
+-record(netnode, { node :: atom(), name :: atom()}).
+
+-type netnode() :: #netnode{}.

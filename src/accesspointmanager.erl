@@ -4,15 +4,17 @@
 %%% @doc
 %%%
 %%% @end
-%%% Created : 14. Apr 2014 2:04 PM
+%%% Created : 17. Apr 2014 10:30 AM
 %%%-------------------------------------------------------------------
--module(lookup).
+-module(accesspointmanager).
 -author("xjurcak").
 
 -behaviour(gen_server).
 
+-include("lookup.hrl").
+
 %% API
--export([start_link/0, get_access_point/0, register_access_point_manager/1]).
+-export([start_link/0, get_access_point/1, register_lookup/0]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -24,9 +26,7 @@
 
 -define(SERVER, ?MODULE).
 
--include("lookup.hrl").
-
--record(state, { managers = sets:new() :: set()}).
+-record(state, {}).
 
 %%%===================================================================
 %%% API
@@ -43,28 +43,18 @@
 start_link() ->
   gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
-%%--------------------------------------------------------------------
-%% @doc
-%% return access point
-%%
-%% @end
-%%--------------------------------------------------------------------
--spec(get_access_point() ->
-  {ok, AccessPoint :: netnode()} | {error, Reason :: term()}).
-get_access_point() ->
-  %gen_server:call({global, ?LOOKUP_SERVER_GLOBAL}, {accesspoint}).
-  gen_server:call(?LOOKUP_SERVER_GLOBAL, {accesspoint}).
 
-%%--------------------------------------------------------------------
-%% @doc
-%% register access point
-%%
-%% @end
-%%--------------------------------------------------------------------
--spec(register_access_point_manager( AccessPointManager :: netnode() ) ->
-  {ok} | {error, Reason :: term()}).
-register_access_point_manager(AccessPointManager) ->
-  gen_server:call(?LOOKUP_SERVER_GLOBAL, {accesspointmanager, AccessPointManager}).
+
+-spec(register_lookup() ->
+  {ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
+register_lookup() ->
+  io:format(net_kernel:connect_node(?LOOKUP_SERVER)),
+  lookup:register_access_point_manager(#netnode{name = ?SERVER, node = node()}).
+
+-spec(get_access_point( Node :: netnode() ) ->
+  {ok, Node :: node()} | full ).
+get_access_point( #netnode{ name = Name, node = Node } ) ->
+  gen_server:call({Name, Node}, {getaccesspoint}).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -85,7 +75,11 @@ register_access_point_manager(AccessPointManager) ->
   {ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term()} | ignore).
 init([]) ->
-  {ok, #state{}}.
+  case catch register_lookup() of
+    {ok, _Pid} -> {ok, #state{}};
+    Error -> {stop, Error}
+  end.
+
 
 %%--------------------------------------------------------------------
 %% @private
@@ -102,14 +96,8 @@ init([]) ->
   {noreply, NewState :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term(), Reply :: term(), NewState :: #state{}} |
   {stop, Reason :: term(), NewState :: #state{}}).
-
-
-handle_call({accesspoint}, _From, State) ->
-  {reply, {ok, self()}, State};
-
-handle_call({accesspointmanager, Node}, _From, #state{ managers = Managers }) ->
-  NewSet = insert(Managers, Node),
-  {reply, {ok, sets:to_list(NewSet)}, #state{managers = NewSet}}.
+handle_call(_Request, _From, State) ->
+  {reply, ok, State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -175,5 +163,3 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
-insert(Managers, Node) ->
-  sets:add_element(Node, Managers).
