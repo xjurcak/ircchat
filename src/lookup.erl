@@ -25,6 +25,7 @@
 -define(SERVER, ?MODULE).
 
 -include("lookup.hrl").
+-include("messages.hrl").
 
 -record(state, { managers = sets:new() :: set()}).
 
@@ -104,12 +105,18 @@ init([]) ->
   {stop, Reason :: term(), NewState :: #state{}}).
 
 
-handle_call({accesspoint}, _From, State) ->
-  {reply, {ok, self()}, State};
+handle_call({accesspoint}, _From, #state{managers = Managers} = State) ->
+  case catch get_accesspoint_from_manager(sets:to_list(Managers)) of
+    #netnode{} = NetNode ->
+      {reply, #message_ok{result = NetNode}, State};
+    _ ->
+      {reply, #message_error{reason = noaccesspoint }, State}
+  end;
+
 
 handle_call({accesspointmanager, Node}, _From, #state{ managers = Managers }) ->
   NewSet = insert(Managers, Node),
-  {reply, {ok, sets:to_list(NewSet)}, #state{managers = NewSet}}.
+  {reply, #message_ok{result = sets:to_list(NewSet)}, #state{managers = NewSet}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -177,3 +184,16 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 insert(Managers, Node) ->
   sets:add_element(Node, Managers).
+
+get_accesspoint_from_manager([Node|T]) ->
+  case catch accesspointmanager:get_access_point(Node) of
+    #message_ok{ result = Result} ->
+      Result;
+    _ ->
+      get_accesspoint_from_manager(T)
+  end;
+
+
+
+get_accesspoint_from_manager([]) ->
+  exit(noaccesspoint).

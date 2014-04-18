@@ -12,6 +12,7 @@
 -behaviour(gen_server).
 
 -include("lookup.hrl").
+-include("messages.hrl").
 
 %% API
 -export([start_link/0, get_access_point/1, register_lookup/0]).
@@ -48,7 +49,7 @@ start_link() ->
 -spec(register_lookup() ->
   {ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
 register_lookup() ->
-  io:format(net_kernel:connect_node(?LOOKUP_SERVER)),
+  net_kernel:connect_node(?LOOKUP_SERVER),
   lookup:register_access_point_manager(#netnode{name = ?SERVER, node = node()}).
 
 -spec(get_access_point( Node :: netnode() ) ->
@@ -76,7 +77,7 @@ get_access_point( #netnode{ name = Name, node = Node } ) ->
   {stop, Reason :: term()} | ignore).
 init([]) ->
   case catch register_lookup() of
-    {ok, _Pid} -> {ok, #state{}};
+    #message_ok{} -> {ok, #state{}};
     Error -> {stop, Error}
   end.
 
@@ -96,8 +97,9 @@ init([]) ->
   {noreply, NewState :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term(), Reply :: term(), NewState :: #state{}} |
   {stop, Reason :: term(), NewState :: #state{}}).
-handle_call(_Request, _From, State) ->
-  {reply, ok, State}.
+handle_call({getaccesspoint}, _From, State) ->
+  Node = obtain_accesspoint(),
+  {reply, #message_ok{result = Node}, State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -163,3 +165,5 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+obtain_accesspoint() ->
+  #netnode{name = ?SERVER, node = node()}.
