@@ -1,0 +1,4 @@
+-define(SERVER_GLOBAL, 'lookup').
+-define(SUPERVISOR_GLOBAL, 'lookup_supervisor').
+-define(CHRM_TABLE, 'chrm').
+-define(CHRM_LOCAL, 'chrm').
