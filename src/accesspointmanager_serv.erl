@@ -4,15 +4,19 @@
 %%% @doc
 %%%
 %%% @end
-%%% Created : 14. Apr 2014 2:04 PM
+%%% Created : 17. Apr 2014 10:30 AM
 %%%-------------------------------------------------------------------
--module(lookup).
+-module(accesspointmanager_serv).
 -author("xjurcak").
 
 -behaviour(gen_server).
+%%-behaviour(supervisor).
+
+-include("lookup.hrl").
+-include("messages.hrl").
 
 %% API
--export([start_link/0, get_access_point/0, register_access_point_manager/1, all_managers/0]).
+-export([start_link/2, get_access_point/1, register_lookup/0]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -23,12 +27,10 @@
   code_change/3]).
 
 -define(SERVER, ?MODULE).
--define(MANAGERS_TABLE, lookup).
 
--include("lookup.hrl").
--include("messages.hrl").
-
--record(state, { managers = sets:new() :: set()}).
+-record(state, {limit=0,
+  sup,
+  refs}).
 
 %%%===================================================================
 %%% API
@@ -40,36 +42,21 @@
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec(start_link() ->
+-spec(start_link(Limit :: integer(), Sup :: pid()) ->
   {ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
-start_link() ->
-  gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+start_link(Limit, Sup) ->
+  gen_server:start_link({local, ?SERVER}, ?MODULE, {Limit, Sup}, []).
 
-%%--------------------------------------------------------------------
-%% @doc
-%% return access point
-%%
-%% @end
-%%--------------------------------------------------------------------
--spec(get_access_point() ->
-  {ok, AccessPoint :: netnode()} | {error, Reason :: term()}).
-get_access_point() ->
-  %gen_server:call({global, ?LOOKUP_SERVER_GLOBAL}, {accesspoint}).
-  gen_server:call(?LOOKUP_SERVER_GLOBAL, {accesspoint}).
+-spec(register_lookup() ->
+  {ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
+register_lookup() ->
+  net_kernel:connect_node(?LOOKUP_SERVER),
+  lookup:register_access_point_manager(#netnode{name = ?SERVER, node = node()}).
 
-%%--------------------------------------------------------------------
-%% @doc
-%% register access point
-%%
-%% @end
-%%--------------------------------------------------------------------
--spec(register_access_point_manager( AccessPointManager :: netnode() ) ->
-  {ok} | {error, Reason :: term()}).
-register_access_point_manager(AccessPointManager) ->
-  gen_server:call(?LOOKUP_SERVER_GLOBAL, {accesspointmanager, AccessPointManager}).
-
-all_managers() ->
-  gen_server:call(?LOOKUP_SERVER_GLOBAL, {all}).
+-spec(get_access_point( Node :: netnode() ) ->
+  {ok, Node :: node()} | full ).
+get_access_point( #netnode{ name = Name, node = Node } ) ->
+  gen_server:call({Name, Node}, {getaccesspoint}).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -86,14 +73,15 @@ all_managers() ->
 %%                     {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
--spec(init(Args :: term()) ->
+-spec(init({Limit :: integer(), Sup :: pid()}) ->
   {ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term()} | ignore).
-init([]) ->
-  {ok, Table} = dets:open_file(?MANAGERS_TABLE, [{repair, force}]),
-  Managers = managers_from_table(Table),
-  dets:close(Table),
-  {ok, #state{ managers = Managers}}.
+init({Limit, Sup}) ->
+  self() ! {register_lookup},
+  self() ! {start_worker_supervisor, Sup},
+  {ok, #state{limit=Limit, refs=gb_sets:empty()}}.
+
+
 
 %%--------------------------------------------------------------------
 %% @private
@@ -111,22 +99,16 @@ init([]) ->
   {stop, Reason :: term(), Reply :: term(), NewState :: #state{}} |
   {stop, Reason :: term(), NewState :: #state{}}).
 
+handle_call({getaccesspoint}, _From, State = #state{limit=N, sup=Sup, refs=R}) when N > 0 ->
+  Name = obtain_accesspoint_name(),
+  {ok, Pid} = supervisor:start_child(Sup, [Name]),
+  Node = #netnode{name = Name, node = node()},
+  Ref = erlang:monitor(process, Pid),
+  {reply, #message_ok{result = Node}, State#state{limit=N-1, refs=gb_sets:add(Ref,R)}};
 
-handle_call({accesspoint}, _From, #state{managers = Managers} = State) ->
-  case catch get_accesspoint_from_manager(sets:to_list(Managers)) of
-    #netnode{} = NetNode ->
-      {reply, #message_ok{result = NetNode}, State};
-    _ ->
-      {reply, #message_error{reason = noaccesspoint }, State}
-  end;
+handle_call({getaccesspoint}, _From, S=#state{limit=N}) when N =< 0 ->
+  {reply, #message_error{reason = noaloc}, S}.
 
-
-handle_call({accesspointmanager, Node}, _From, #state{ managers = Managers }) ->
-  NewSet = insert(Managers, Node),
-  {reply, #message_ok{result = sets:to_list(NewSet)}, #state{managers = NewSet}};
-
-handle_call({all}, _From, State = #state{ managers = Managers }) ->
-  {reply, #message_ok{result = sets:to_list(Managers)}, State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -156,7 +138,30 @@ handle_cast(_Request, State) ->
   {noreply, NewState :: #state{}} |
   {noreply, NewState :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term(), NewState :: #state{}}).
-handle_info(_Info, State) ->
+
+handle_info({'DOWN', Ref, process, _Pid, _}, S = #state{refs=Refs}) ->
+  io:format("received down msg~n"),
+  case gb_sets:is_element(Ref, Refs) of
+    true ->
+      handle_down_worker(Ref, S);
+    false -> %% Not our responsibility
+      {noreply, S}
+  end;
+
+handle_info({register_lookup}, S = #state{}) ->
+  case catch register_lookup() of
+    #message_ok{} ->{noreply, S};
+    Error -> {stop, Error}
+  end;
+
+handle_info({start_worker_supervisor, Sup}, S = #state{}) ->
+  {ok, Pid} = supervisor:start_child(Sup, {worker_sup, {accesspointmanager_worker_sup, start_link, []}, temporary, 10000, supervisor,
+    [accesspointmanager_worker_sup]}),
+  link(Pid),
+  {noreply, S#state{sup=Pid}};
+
+handle_info(Info, State) ->
+  io:format("Unknown msg: ~p~n", [Info]),
   {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -192,47 +197,9 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
-insert(Managers, Node) ->
-  case sets:is_element(Node, Managers) of
-    false ->
-      dets:open_file(?MANAGERS_TABLE, [{repair, force}]),
-      dets:insert(?MANAGERS_TABLE, {key_from_node(Node), Node } ),
-      sets:add_element(Node, Managers);
-    _->
-      io:format("Manager already in qeue"),
-      Managers
-  end.
+obtain_accesspoint_name() ->
+  {A, B, C} = now(),
+  list_to_atom(lists:concat(["access_point_", A, B, C])).
 
-
-get_accesspoint_from_manager([Node|T]) ->
-  case catch accesspointmanager_serv:get_access_point(Node) of
-    #message_ok{ result = Result} ->
-      Result;
-    _ ->
-      get_accesspoint_from_manager(T)
-  end;
-
-
-
-get_accesspoint_from_manager([]) ->
-  exit(noaccesspoint).
-
-managers_from_table(Table) ->
-  managers_from_table(Table, dets:first(Table), sets:new()).
-
-managers_from_table(_Table, '$end_of_table', Set) ->
-  Set;
-
-managers_from_table(Table, Key, Set) ->
-  List = dets:lookup(Table, Key),
-  managers_from_table(Table, dets:next(Table, Key), table_entry_to_set(List, Set)).
-
-table_entry_to_set([{_Key, #netnode{} = Node}| T], Set) ->
-  table_entry_to_set(T, sets:add_element(Node, Set));
-
-table_entry_to_set([], Set) ->
-  Set.
-
-
-key_from_node(#netnode{name = Name, node = Node}) ->
-  lists:concat([Name, Node]).
+handle_down_worker(Ref, S = #state{limit=L, sup=_Sup, refs=Refs}) ->
+  {noreply, S#state{limit=L+1, refs=gb_sets:delete(Ref,Refs)}}.
