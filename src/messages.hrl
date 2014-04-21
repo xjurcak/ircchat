@@ -4,13 +4,12 @@
 %%% @doc
 %%%
 %%% @end
-%%% Created : 14. Apr 2014 2:58 PM
+%%% Created : 18. Apr 2014 10:19 AM
 %%%-------------------------------------------------------------------
 -author("xjurcak").
--define(LOOKUP_SERVER, 'lookup@XJURCAKO-PC').
--define(LOOKUP_SERVER_GLOBAL, {'lookup', ?LOOKUP_SERVER }).
 
+-record(message_ok, { result = nil :: any() }).
+-record(message_error, { reason :: atom(), reason_message = '' :: term() }).
 
--record(netnode, { node :: atom(), name :: atom()}).
-
--type netnode() :: #netnode{}.
+-type message_ok() :: #message_ok{}.
+-type message_error() :: #message_error{}.
