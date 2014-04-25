@@ -10,9 +10,12 @@
 -author("xjurcak").
 
 -behaviour(gen_server).
+-behaviour(backable).
 
 %% API
--export([start_link/0, get_access_point/0, register_access_point_manager/1, all_managers/0]).
+-export([start/0, start/1, get_access_point/0, register_access_point_manager/1, all_managers/0]).
+
+-export([start_up/0, global_name/0, on_before_backup/1, on_master_start/0, on_slave_start/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -34,37 +37,28 @@
 %%% API
 %%%===================================================================
 
-%%--------------------------------------------------------------------
-%% @doc
-%% Starts the server
-%%
-%% @end
-%%--------------------------------------------------------------------
--spec(start_link() ->
-  {ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
-start_link() ->
-  gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+start() ->
+	 backable:backup(node(),  ?MODULE).
 
-%%--------------------------------------------------------------------
-%% @doc
-%% return access point
-%%
-%% @end
-%%--------------------------------------------------------------------
--spec(get_access_point() ->
-  {ok, AccessPoint :: netnode()} | {error, Reason :: term()}).
+start(Node) ->
+	start(Node, 10).
+start(_Node, 0) ->
+	{error, couldnt_connect_to_node};
+start(Node, Count) ->
+	case net_adm:ping(Node) of
+		pong ->
+			timer:sleep(2000), %% wait till synced data
+			start();
+		pang ->
+			timer:sleep(5000),
+			start(Node, Count-1)
+	end.
+
+
 get_access_point() ->
   %gen_server:call({global, ?LOOKUP_SERVER_GLOBAL}, {accesspoint}).
   gen_server:call(?LOOKUP_SERVER_GLOBAL, {accesspoint}).
 
-%%--------------------------------------------------------------------
-%% @doc
-%% register access point
-%%
-%% @end
-%%--------------------------------------------------------------------
--spec(register_access_point_manager( AccessPointManager :: netnode() ) ->
-  {ok} | {error, Reason :: term()}).
 register_access_point_manager(AccessPointManager) ->
   gen_server:call(?LOOKUP_SERVER_GLOBAL, {accesspointmanager, AccessPointManager}).
 
@@ -72,45 +66,51 @@ all_managers() ->
   gen_server:call(?LOOKUP_SERVER_GLOBAL, {all}).
 
 %%%===================================================================
+%%% backable callbacks
+%%%===================================================================
+
+start_up() ->
+	Ret = gen_server:start_link({local, ?SERVER}, ?MODULE, [], []),
+	case Ret of
+		{ok, Pid} -> unlink(Pid)
+	end,
+	Ret.
+
+on_before_backup(Node) ->
+	io:format("initializing node '~p' ~n", [node()]),
+	mnesia:delete_schema([node()]),
+	case global:whereis_name(global_name()) of
+		undefined ->
+			on_master_start();
+		Pid ->
+			on_slave_start(node(Pid))
+	end.
+
+on_master_start() ->
+	io:format("initializing as MASTER node ~p~n", [node()]),	
+	mnesia:start(),
+    mnesia:create_schema([node()]),
+    mnesia:create_table(?MANAGERS_TABLE, []).
+	 
+
+on_slave_start(MasterNode) ->
+	io:format("initializing as SLAVE node ~p~n", [node()]),	
+	mnesia:start(),
+    mnesia:change_config(extra_db_nodes, [MasterNode]),
+    mnesia:change_table_copy_type(schema, node(), disc_copies),
+    Tabs = mnesia:system_info(tables) -- [schema],
+    [mnesia:add_table_copy(Tab,node(), disc_copies) || Tab <- Tabs].
+
+global_name() ->
+	?LOOKUP_SERVER_GLOBAL.
+
+%%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Initializes the server
-%%
-%% @spec init(Args) -> {ok, State} |
-%%                     {ok, State, Timeout} |
-%%                     ignore |
-%%                     {stop, Reason}
-%% @end
-%%--------------------------------------------------------------------
--spec(init(Args :: term()) ->
-  {ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
-  {stop, Reason :: term()} | ignore).
 init([]) ->
-  {ok, Table} = dets:open_file(?MANAGERS_TABLE, [{repair, force}]),
-  Managers = managers_from_table(Table),
-  dets:close(Table),
+  Managers = managers_from_table(?MANAGERS_TABLE),
   {ok, #state{ managers = Managers}}.
-
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Handling call messages
-%%
-%% @end
-%%--------------------------------------------------------------------
--spec(handle_call(Request :: term(), From :: {pid(), Tag :: term()},
-    State :: #state{}) ->
-  {reply, Reply :: term(), NewState :: #state{}} |
-  {reply, Reply :: term(), NewState :: #state{}, timeout() | hibernate} |
-  {noreply, NewState :: #state{}} |
-  {noreply, NewState :: #state{}, timeout() | hibernate} |
-  {stop, Reason :: term(), Reply :: term(), NewState :: #state{}} |
-  {stop, Reason :: term(), NewState :: #state{}}).
-
 
 handle_call({accesspoint}, _From, #state{managers = Managers} = State) ->
   case catch get_accesspoint_from_manager(sets:to_list(Managers)) of
@@ -128,64 +128,15 @@ handle_call({accesspointmanager, Node}, _From, #state{ managers = Managers }) ->
 handle_call({all}, _From, State = #state{ managers = Managers }) ->
   {reply, #message_ok{result = sets:to_list(Managers)}, State}.
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Handling cast messages
-%%
-%% @end
-%%--------------------------------------------------------------------
--spec(handle_cast(Request :: term(), State :: #state{}) ->
-  {noreply, NewState :: #state{}} |
-  {noreply, NewState :: #state{}, timeout() | hibernate} |
-  {stop, Reason :: term(), NewState :: #state{}}).
 handle_cast(_Request, State) ->
   {noreply, State}.
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Handling all non call/cast messages
-%%
-%% @spec handle_info(Info, State) -> {noreply, State} |
-%%                                   {noreply, State, Timeout} |
-%%                                   {stop, Reason, State}
-%% @end
-%%--------------------------------------------------------------------
--spec(handle_info(Info :: timeout() | term(), State :: #state{}) ->
-  {noreply, NewState :: #state{}} |
-  {noreply, NewState :: #state{}, timeout() | hibernate} |
-  {stop, Reason :: term(), NewState :: #state{}}).
 handle_info(_Info, State) ->
   {noreply, State}.
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% This function is called by a gen_server when it is about to
-%% terminate. It should be the opposite of Module:init/1 and do any
-%% necessary cleaning up. When it returns, the gen_server terminates
-%% with Reason. The return value is ignored.
-%%
-%% @spec terminate(Reason, State) -> void()
-%% @end
-%%--------------------------------------------------------------------
--spec(terminate(Reason :: (normal | shutdown | {shutdown, term()} | term()),
-    State :: #state{}) -> term()).
 terminate(_Reason, _State) ->
   ok.
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Convert process state when code is changed
-%%
-%% @spec code_change(OldVsn, State, Extra) -> {ok, NewState}
-%% @end
-%%--------------------------------------------------------------------
--spec(code_change(OldVsn :: term() | {down, term()}, State :: #state{},
-    Extra :: term()) ->
-  {ok, NewState :: #state{}} | {error, Reason :: term()}).
 code_change(_OldVsn, State, _Extra) ->
   {ok, State}.
 
@@ -195,8 +146,7 @@ code_change(_OldVsn, State, _Extra) ->
 insert(Managers, Node) ->
   case sets:is_element(Node, Managers) of
     false ->
-      dets:open_file(?MANAGERS_TABLE, [{repair, force}]),
-      dets:insert(?MANAGERS_TABLE, {key_from_node(Node), Node } ),
+	  transac_return(mnesia:transaction(fun() -> mnesia:write({?MANAGERS_TABLE, key_from_node(Node), Node}) end)),
       sets:add_element(Node, Managers);
     _->
       io:format("Manager already in qeue"),
@@ -218,14 +168,19 @@ get_accesspoint_from_manager([]) ->
   exit(noaccesspoint).
 
 managers_from_table(Table) ->
-  managers_from_table(Table, dets:first(Table), sets:new()).
+  First = transac_return(mnesia:transaction(fun() ->  mnesia:first(?MANAGERS_TABLE) end)),
+  managers_from_table(Table, First, sets:new()).
 
 managers_from_table(_Table, '$end_of_table', Set) ->
   Set;
 
 managers_from_table(Table, Key, Set) ->
-  List = dets:lookup(Table, Key),
-  managers_from_table(Table, dets:next(Table, Key), table_entry_to_set(List, Set)).
+	case transac_return(mnesia:transaction(fun() -> mnesia:read(Table, Key) end)) of
+		{ok, [{?MANAGERS_TABLE, _, List}]} ->
+			managers_from_table(Table, dets:next(Table, Key), table_entry_to_set(List, Set));
+		_ ->
+			  managers_from_table(Table, '$end_of_table', Set)
+	end.
 
 table_entry_to_set([{_Key, #netnode{} = Node}| T], Set) ->
   table_entry_to_set(T, sets:add_element(Node, Set));
@@ -233,6 +188,10 @@ table_entry_to_set([{_Key, #netnode{} = Node}| T], Set) ->
 table_entry_to_set([], Set) ->
   Set.
 
+transac_return({atomic, Result}) ->
+	{ok, Result};
+transac_return({aborted, Reason}) ->
+	{error, Reason}.
 
 key_from_node(#netnode{name = Name, node = Node}) ->
   lists:concat([Name, Node]).

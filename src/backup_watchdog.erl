@@ -25,7 +25,7 @@ init(State) ->
 	apply(State#state.module, on_before_backup, [State#state.node]).
 
 loop(State) ->
-	%io:format("Watching on node '~p?~p' process '~p'.!!!~n", [node(), self(), State#state.g_name]),
+	%io:format("Watching on node ~p?~p process ~p.!!!~n", [node(), self(), State#state.g_name]),
 	Result = check_and_spawn(State),
 	timer:sleep(5000),
 	loop(State).
@@ -44,11 +44,11 @@ spawn_it(State) ->
 	case Ret of
 		{ok, Pid} ->
 			case global:register_name(State#state.g_name, Pid) of 
-				true ->
-					io:format("Registered ~p as '~p' with ~p. Monitoring!!!~n", [Pid, State#state.g_name, State]),
+				yes ->
+					io:format("Registered ~p as '~p' with ~p!!!~n", [Pid, State#state.g_name, State]),
 					spawned;
 				_ ->
-					couldnt_registered	
+					couldnt_register	
 			end;		
 		_ ->
 			nothing_started	
