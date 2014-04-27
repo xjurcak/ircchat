@@ -16,7 +16,7 @@
 -include("messages.hrl").
 
 %% API
--export([start_link/2, get_access_point/1, register_lookup/0]).
+-export([start_link/2, get_access_point/1, register_lookup/0, gel_all_nodes/0]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -57,6 +57,9 @@ register_lookup() ->
   {ok, Node :: node()} | full ).
 get_access_point( #netnode{ name = Name, node = Node } ) ->
   gen_server:call({Name, Node}, {getaccesspoint}).
+
+gel_all_nodes() ->
+  gen_server:call(?SERVER, {all}).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -107,7 +110,10 @@ handle_call({getaccesspoint}, _From, State = #state{limit=N, sup=Sup, refs=R}) w
   {reply, #message_ok{result = Node}, State#state{limit=N-1, refs=gb_sets:add(Ref,R)}};
 
 handle_call({getaccesspoint}, _From, S=#state{limit=N}) when N =< 0 ->
-  {reply, #message_error{reason = noaloc}, S}.
+  {reply, #message_error{reason = noaloc}, S};
+
+handle_call({all}, _From, S=#state{refs=R}) ->
+  {reply, #message_ok{result = gb_sets:to_list(R)}, S}.
 
 
 %%--------------------------------------------------------------------

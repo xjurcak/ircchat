@@ -6,13 +6,13 @@
 %%% @end
 %%% Created : 19. Apr 2014 11:21 AM
 %%%-------------------------------------------------------------------
--module(accesspoint).
+-module(chatroom).
 -author("xjurcak").
 
 -behaviour(gen_server).
 
 %% API
--export([start_link/1, create_chatroom/2]).
+-export([start_link/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -23,9 +23,8 @@
   code_change/3]).
 
 -define(SERVER, ?MODULE).
--include("messages.hrl").
 
--record(state, {}).
+-record(state, { name :: term()}).
 
 %%%===================================================================
 %%% API
@@ -41,11 +40,7 @@
   {ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
 start_link(Name) ->
   io:format(Name),
-  gen_server:start_link({local, Name}, ?MODULE, [], []).
-
-create_chatroom(#netnode{name = Name, node = Node}, ChatroomName) ->
-  gen_server:call({Name, Node}, {createchatroom, ChatroomName}).
-
+  gen_server:start_link(?MODULE, [Name], []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -65,8 +60,8 @@ create_chatroom(#netnode{name = Name, node = Node}, ChatroomName) ->
 -spec(init(Args :: term()) ->
   {ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term()} | ignore).
-init([]) ->
-  {ok, #state{}, 100000}.
+init([Name]) ->
+  {ok, #state{ name = Name}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -83,11 +78,6 @@ init([]) ->
   {noreply, NewState :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term(), Reply :: term(), NewState :: #state{}} |
   {stop, Reason :: term(), NewState :: #state{}}).
-
-handle_call({createchatroom, _ChatroomName}, _From, State) ->
-%%   Node = internal_lookup:
-  {reply, ok, State};
-
 handle_call(_Request, _From, State) ->
   {reply, ok, State}.
 
@@ -119,10 +109,6 @@ handle_cast(_Request, State) ->
   {noreply, NewState :: #state{}} |
   {noreply, NewState :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term(), NewState :: #state{}}).
-
-handle_info(timeout, _State) ->
-  {stop, normal, #state{}};
-
 handle_info(_Info, State) ->
   {noreply, State}.
 

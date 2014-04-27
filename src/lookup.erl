@@ -57,13 +57,13 @@ start(Node, Count) ->
 
 get_access_point() ->
   %gen_server:call({global, ?LOOKUP_SERVER_GLOBAL}, {accesspoint}).
-  gen_server:call(?LOOKUP_SERVER_GLOBAL, {accesspoint}).
+  gen_server:call({global,?LOOKUP_SERVER_GLOBAL}, {accesspoint}).
 
 register_access_point_manager(AccessPointManager) ->
-  gen_server:call(?LOOKUP_SERVER_GLOBAL, {accesspointmanager, AccessPointManager}).
+  gen_server:call({global, ?LOOKUP_SERVER_GLOBAL}, {accesspointmanager, AccessPointManager}).
 
 all_managers() ->
-  gen_server:call(?LOOKUP_SERVER_GLOBAL, {all}).
+  gen_server:call({global,?LOOKUP_SERVER_GLOBAL}, {all}).
 
 %%%===================================================================
 %%% backable callbacks
@@ -76,7 +76,7 @@ start_up() ->
 	end,
 	Ret.
 
-on_before_backup(Node) ->
+on_before_backup(_Node) ->
 	io:format("initializing node '~p' ~n", [node()]),
 	mnesia:delete_schema([node()]),
 	case global:whereis_name(global_name()) of

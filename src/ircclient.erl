@@ -26,8 +26,11 @@ start() ->
   ok | false).
 
 get_access_point() ->
-  net_kernel:connect_node(?LOOKUP_SERVER),
-  Result = lookup:get_access_point(),
-  net_kernel:disconnect(?LOOKUP_SERVER),
-  Result.
+  case net_adm:ping(?LOOKUP_SERVER) of
+    pang ->
+      {error, nolookupserver};
+    pong ->
+      timer:sleep(2000),
+      lookup:get_access_point()
+  end.
 

@@ -13,3 +13,7 @@
 
 -type message_ok() :: #message_ok{}.
 -type message_error() :: #message_error{}.
+
+-record(netnode, { node :: atom(), name :: atom()}).
+
+-type netnode() :: #netnode{}.

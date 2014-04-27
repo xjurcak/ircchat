@@ -26,7 +26,7 @@ init(State) ->
 
 loop(State) ->
 	%io:format("Watching on node ~p?~p process ~p.!!!~n", [node(), self(), State#state.g_name]),
-	Result = check_and_spawn(State),
+	_Result = check_and_spawn(State),
 	timer:sleep(5000),
 	loop(State).
 

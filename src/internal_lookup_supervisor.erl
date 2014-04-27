@@ -28,7 +28,7 @@ start_up() ->
 	end,
 	Ret.
 
-on_before_backup(Node) ->
+on_before_backup(_Node) ->
 	io:format("initializing node '~p' ~n", [node()]),
 	mnesia:delete_schema([node()]),
 	case global:whereis_name(?SUPERVISOR_GLOBAL) of
