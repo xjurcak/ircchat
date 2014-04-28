@@ -57,13 +57,13 @@ start(Node, Count) ->
 
 get_access_point() ->
   %gen_server:call({global, ?LOOKUP_SERVER_GLOBAL}, {accesspoint}).
-  gen_server:call({global,?LOOKUP_SERVER_GLOBAL}, {accesspoint}).
+  gen_server:call({global, global_name()}, {accesspoint}).
 
 register_access_point_manager(AccessPointManager) ->
-  gen_server:call({global, ?LOOKUP_SERVER_GLOBAL}, {accesspointmanager, AccessPointManager}).
+  gen_server:call({global, global_name()}, {accesspointmanager, AccessPointManager}).
 
 all_managers() ->
-  gen_server:call({global,?LOOKUP_SERVER_GLOBAL}, {all}).
+  gen_server:call({global, global_name()}, {all}).
 
 %%%===================================================================
 %%% backable callbacks
