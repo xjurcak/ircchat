@@ -1,0 +1,1 @@
+-define(LOGIN_SERVER_GLOBAL, login_server).

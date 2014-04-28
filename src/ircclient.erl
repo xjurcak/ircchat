@@ -13,6 +13,7 @@
 -include("messages.hrl").
 
 -behaviour(gen_server).
+-behaviour(starter).
 
 %% API
 -export([get_access_point/0, start/0, join_the_group/1]).
@@ -23,14 +24,8 @@
 
 -record(state, { accesspoint = {}}).
 
--spec(start() ->
-  ok | false).
 start() ->
-  ok.
-
-
--spec(get_access_point() ->
-  ok | false).
+  start_link().
 
 get_access_point() ->
   case net_adm:ping(?LOOKUP_SERVER) of

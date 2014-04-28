@@ -1,9 +1,10 @@
 -module(internal_lookup).
 -behaviour(gen_server).
+-behaviour(starter).
 
 
 %% API
--export([start/0, start/1, start/2, start_link/0, all_managers/0]).
+-export([start/0, start_link/0, all_managers/0]).
 -export([register_chrm/1, unregister_chrm/1, get_chrm/1, exists/0]).
 
 %% gen_server callbacks
@@ -44,24 +45,8 @@ get_chrm(Name) ->
 
 all_managers() ->
   gen_server:call({global, ?SERVER_GLOBAL}, {all}).
-	
 
-start(Node) ->
-	start(Node, 10).
-
-start(_Node, 0) ->
-	{error, couldnt_connect_to_node};
-
-start(Node, Count) ->
-	case net_adm:ping(Node) of
-		pong ->
-			timer:sleep(2000), %% wait till synced data
-			internal_lookup_supervisor:start();
-		pang ->
-			timer:sleep(5000),
-			start(Node, Count-1)
-	end.
-
+%% starter behaviour
 start() ->
 	internal_lookup_supervisor:start().
 

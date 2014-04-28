@@ -11,9 +11,10 @@
 
 -behaviour(gen_server).
 -behaviour(backable).
+-behaviour(starter).
 
 %% API
--export([start/0, start/1, get_access_point/0, register_access_point_manager/1, all_managers/0]).
+-export([start/0, get_access_point/0, register_access_point_manager/1, all_managers/0]).
 
 -export([start_up/0, global_name/0, on_before_backup/1, on_master_start/0, on_slave_start/1]).
 
@@ -39,20 +40,6 @@
 
 start() ->
 	 backable:backup(node(),  ?MODULE).
-
-start(Node) ->
-	start(Node, 10).
-start(_Node, 0) ->
-	{error, couldnt_connect_to_node};
-start(Node, Count) ->
-	case net_adm:ping(Node) of
-		pong ->
-			timer:sleep(2000), %% wait till synced data
-			start();
-		pang ->
-			timer:sleep(5000),
-			start(Node, Count-1)
-	end.
 
 
 get_access_point() ->
