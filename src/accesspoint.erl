@@ -12,7 +12,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/1, create_chatroom/2]).
+-export([start_link/1, join_chatroom/2]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -25,7 +25,7 @@
 -define(SERVER, ?MODULE).
 -include("messages.hrl").
 
--record(state, {}).
+-record(state, { chatrooms, chatroomsmanagers }).
 
 %%%===================================================================
 %%% API
@@ -43,8 +43,8 @@ start_link(Name) ->
   io:format(Name),
   gen_server:start_link({local, Name}, ?MODULE, [], []).
 
-create_chatroom(#netnode{name = Name, node = Node}, ChatroomName) ->
-  gen_server:call({Name, Node}, {createchatroom, ChatroomName}).
+join_chatroom(#netnode{name = Name, node = Node}, ChatroomName) ->
+  gen_server:call({Name, Node}, {joinchatroom, ChatroomName}).
 
 
 %%%===================================================================
@@ -66,7 +66,7 @@ create_chatroom(#netnode{name = Name, node = Node}, ChatroomName) ->
   {ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term()} | ignore).
 init([]) ->
-  {ok, #state{}, 100000}.
+  {ok, #state{ chatrooms = dict:new(), chatroomsmanagers = []}, 100000}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -84,9 +84,22 @@ init([]) ->
   {stop, Reason :: term(), Reply :: term(), NewState :: #state{}} |
   {stop, Reason :: term(), NewState :: #state{}}).
 
-handle_call({createchatroom, _ChatroomName}, _From, State) ->
+handle_call({joinchatroom, ChatroomName}, From, State = #state{chatrooms =  Chatrooms}) ->
 %%   Node = internal_lookup:
-  {reply, ok, State};
+  case dict:find(ChatroomName, Chatrooms) of
+    {ok, Pid} ->
+      case catch chatroom:join(Pid, From) of
+        #message_ok{} ->
+          {reply, #message_ok{}, State};
+        #message_error{} = Error ->
+          {reply, Error, State};
+        _ ->
+          handle_call_jointchatroom(ChatroomName, From, State#state{ chatrooms = dict:delete_element(ChatroomName, Chatrooms)})
+      end;
+    _ ->
+      handle_call_jointchatroom(ChatroomName, From, State)
+
+  end;
 
 handle_call(_Request, _From, State) ->
   {reply, ok, State}.
@@ -159,3 +172,46 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+handle_call_jointchatroom(Name, From, State = #state{ chatroomsmanagers = []}) ->
+  case internal_lookup:all_managers() of
+    #message_ok{result = Managers}->
+      handle_call_jointchatroom(Name, Managers, From, State#state{chatroomsmanagers = Managers});
+    _ ->
+      {reply, #message_error{reason = internallookup}, State}
+    end;
+
+handle_call_jointchatroom(Name, From, State = #state{ chatroomsmanagers = Managers}) ->
+  handle_call_jointchatroom(Name, Managers, From, State#state{chatroomsmanagers = Managers}).
+
+handle_call_jointchatroom(Name, Managers, From, State = #state{ chatrooms = CHRMS }) ->
+  case chatroommanager:get_chat_room(Managers, Name) of
+    nofind ->
+      case catch get_chatroom_from_manager(Name, Managers) of
+        {ok, Pid} ->
+          case catch chatroom:join(Pid, From) of
+            #message_ok{} ->
+              {reply, #message_ok{}, State#state{chatrooms = dict:append(Name, Pid, CHRMS)}};
+            #message_error{} = Error ->
+              {reply, #message_error{ reason = Error}, State#state{chatrooms = dict:append(Name, Pid, CHRMS)}};
+            _ ->
+              {reply, #message_error{reason = jointchatroom }, State}
+          end;
+
+        _ ->
+          {reply, #message_error{reason = nochatroom }, State}
+      end;
+    {ok, Pid} ->
+      {reply, #message_ok{}, State#state{ chatrooms = dict:append(Name, Pid, CHRMS)}}
+  end.
+
+get_chatroom_from_manager(Name, [Node|T]) ->
+  case catch chatroommanager:create_room(Node, Name) of
+    #message_ok{ result = Pid} ->
+      {ok, Pid};
+    _ ->
+      get_chatroom_from_manager(Name, T)
+  end;
+
+get_chatroom_from_manager(_Name, []) ->
+  exit(noaccesspoint).

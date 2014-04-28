@@ -13,10 +13,14 @@
 
 
 %% API
--export([start_link/0, get_chat_room/2, nodes_from_netnodes/2]).
+-export([start_link/0, get_chat_room/2, nodes_from_netnodes/2, create_room/2]).
 
 start_link() ->
   chatroommanager_sup:start_link(10).
+
+create_room(Node = #netnode{}, Name) ->
+  chatroommanager_serv:create_room(Node, Name).
+
 
 get_chat_room(ChatroomsManagers, Name) ->
   Nodes = nodes_from_netnodes(ChatroomsManagers, []),
@@ -31,7 +35,7 @@ nodes_from_netnodes([], Nodes) ->
   Nodes.
 
 find_chatroom_in_replie([{_Node, #message_ok{result = Pid}} | _T]) ->
-  Pid;
+  {ok, Pid};
 
 find_chatroom_in_replie([{_Node, _Reply} | T ]) ->
   find_chatroom_in_replie(T);
