@@ -12,7 +12,8 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/1, join_chatroom/2]).
+-export([start_link/1, login/2, connect/1, join_chatroom/2]).
+-export([touch_loop/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -25,147 +26,90 @@
 -define(SERVER, ?MODULE).
 -include("messages.hrl").
 
--record(state, { chatrooms, chatroomsmanagers }).
+-record(state, { chatrooms, chatroomsmanagers, client_pid=nil, logged_in_as=nil, toucher=nil}).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
-%%--------------------------------------------------------------------
-%% @doc
-%% Starts the server
-%%
-%% @end
-%%--------------------------------------------------------------------
--spec(start_link(Name :: term()) ->
-  {ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
 start_link(Name) ->
   io:format(Name),
   gen_server:start_link({local, Name}, ?MODULE, [], []).
 
 join_chatroom(#netnode{name = Name, node = Node}, ChatroomName) ->
   gen_server:call({Name, Node}, {joinchatroom, ChatroomName}).
+login(#netnode{name = Name, node = Node}, LoginName) ->
+  gen_server:call({Name, Node}, {login, LoginName}).
+connect(#netnode{name = Name, node = Node}) ->
+  gen_server:call({Name, Node}, {connect}).
 
 
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Initializes the server
-%%
-%% @spec init(Args) -> {ok, State} |
-%%                     {ok, State, Timeout} |
-%%                     ignore |
-%%                     {stop, Reason}
-%% @end
-%%--------------------------------------------------------------------
--spec(init(Args :: term()) ->
-  {ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
-  {stop, Reason :: term()} | ignore).
 init([]) ->
   {ok, #state{ chatrooms = dict:new(), chatroomsmanagers = []}, 100000}.
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Handling call messages
-%%
-%% @end
-%%--------------------------------------------------------------------
--spec(handle_call(Request :: term(), From :: {pid(), Tag :: term()},
-    State :: #state{}) ->
-  {reply, Reply :: term(), NewState :: #state{}} |
-  {reply, Reply :: term(), NewState :: #state{}, timeout() | hibernate} |
-  {noreply, NewState :: #state{}} |
-  {noreply, NewState :: #state{}, timeout() | hibernate} |
-  {stop, Reason :: term(), Reply :: term(), NewState :: #state{}} |
-  {stop, Reason :: term(), NewState :: #state{}}).
+handle_call({connect}, {ClientPid, _Tag}, State = #state{client_pid = nil}) ->
+	monitor(process, ClientPid),
+	{reply, #message_ok{result={connected}}, State#state{client_pid = ClientPid}};
+handle_call({connect}, {ClientPid, _Tag}, State = #state{client_pid = ClientPid}) ->
+	{reply, #message_error{reason={already_connected}}, State};
+handle_call({connect}, _From, State) ->
+	{reply, #message_error{reason={already_engaged}}, State};
 
-handle_call({joinchatroom, ChatroomName}, From, State = #state{chatrooms =  Chatrooms}) ->
+handle_call({login, LoginName}, {ClientPid, _Tag}, State = #state{logged_in_as=LoggedInAs, client_pid = ClientPid}) ->
 %%   Node = internal_lookup:
-  case dict:find(ChatroomName, Chatrooms) of
-    {ok, Pid} ->
-      case catch chatroom:join(Pid, From) of
-        #message_ok{} ->
-          {reply, #message_ok{}, State};
-        #message_error{} = Error ->
-          {reply, Error, State};
-        _ ->
-          handle_call_jointchatroom(ChatroomName, From, State#state{ chatrooms = dict:delete_element(ChatroomName, Chatrooms)})
-      end;
-    _ ->
-      handle_call_jointchatroom(ChatroomName, From, State)
+	case LoggedInAs of
+		nil ->
+			case login_server:login(LoginName, self()) of
+				#message_ok{result=logged} = Result ->
+					NewState = State#state{logged_in_as=LoginName,toucher=spawn_link(?MODULE, touch_loop, [LoginName])},
+					{reply, Result, NewState};
+				#message_ok{result=Result} -> 
+					{reply, #message_error{reason={Result, LoggedInAs}}, State}
+			end;	
+		_ ->
+			{reply, #message_error{reason={already_logged_in, LoggedInAs}}, State}
+	end;
 
-  end;
-
+handle_call({joinchatroom, ChatroomName}, {ClientPid, _Tag}, State = #state{chatrooms =  Chatrooms, client_pid = ClientPid}) ->
+%%   Node = internal_lookup:
+  login_checked(State, fun() -> 
+	  case dict:find(ChatroomName, Chatrooms) of
+	    {ok, Pid} ->
+	      case catch chatroom:join(Pid, ClientPid) of
+	        #message_ok{} ->
+	          {reply, #message_ok{}, State};
+	        #message_error{} = Error ->
+	          {reply, Error, State};
+	        _ ->
+	          jointchatroom(ChatroomName, ClientPid, State#state{ chatrooms = dict:delete_element(ChatroomName, Chatrooms)})
+	      end;
+	    _ ->
+	      jointchatroom(ChatroomName, ClientPid, State)
+	  end
+  end);
 handle_call(_Request, _From, State) ->
   {reply, ok, State}.
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Handling cast messages
-%%
-%% @end
-%%--------------------------------------------------------------------
--spec(handle_cast(Request :: term(), State :: #state{}) ->
-  {noreply, NewState :: #state{}} |
-  {noreply, NewState :: #state{}, timeout() | hibernate} |
-  {stop, Reason :: term(), NewState :: #state{}}).
+handle_cast({logout, LoginName, Reason}, State) ->
+  {noreply, loggedout_i(LoginName, State, Reason)};
 handle_cast(_Request, State) ->
   {noreply, State}.
-
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Handling all non call/cast messages
-%%
-%% @spec handle_info(Info, State) -> {noreply, State} |
-%%                                   {noreply, State, Timeout} |
-%%                                   {stop, Reason, State}
-%% @end
-%%--------------------------------------------------------------------
--spec(handle_info(Info :: timeout() | term(), State :: #state{}) ->
-  {noreply, NewState :: #state{}} |
-  {noreply, NewState :: #state{}, timeout() | hibernate} |
-  {stop, Reason :: term(), NewState :: #state{}}).
 
 handle_info(timeout, _State) ->
   {stop, normal, #state{}};
 
+handle_info({'DOWN', _MonitorRef, _Type, Object, _Info}, State = #state{client_pid = Object}) ->
+  {stop,client_down,State};
 handle_info(_Info, State) ->
   {noreply, State}.
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% This function is called by a gen_server when it is about to
-%% terminate. It should be the opposite of Module:init/1 and do any
-%% necessary cleaning up. When it returns, the gen_server terminates
-%% with Reason. The return value is ignored.
-%%
-%% @spec terminate(Reason, State) -> void()
-%% @end
-%%--------------------------------------------------------------------
--spec(terminate(Reason :: (normal | shutdown | {shutdown, term()} | term()),
-    State :: #state{}) -> term()).
 terminate(_Reason, _State) ->
   ok.
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Convert process state when code is changed
-%%
-%% @spec code_change(OldVsn, State, Extra) -> {ok, NewState}
-%% @end
-%%--------------------------------------------------------------------
--spec(code_change(OldVsn :: term() | {down, term()}, State :: #state{},
-    Extra :: term()) ->
-  {ok, NewState :: #state{}} | {error, Reason :: term()}).
 code_change(_OldVsn, State, _Extra) ->
   {ok, State}.
 
@@ -173,18 +117,31 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-handle_call_jointchatroom(Name, From, State = #state{ chatroomsmanagers = []}) ->
+login_checked(State, Func) ->
+	case is_logged_in(State) of
+	false ->
+	  {reply, #message_error{reason = not_logged_in}, State};
+	_ ->
+	  Func()
+	end.
+
+is_logged_in(#state{logged_in_as=nil}) ->
+	false;
+is_logged_in(#state{logged_in_as=_}) ->
+	true.
+
+jointchatroom(Name, From, State = #state{ chatroomsmanagers = []}) ->
   case internal_lookup:all_managers() of
     #message_ok{result = Managers}->
-      handle_call_jointchatroom(Name, Managers, From, State#state{chatroomsmanagers = Managers});
+      jointchatroom(Name, Managers, From, State#state{chatroomsmanagers = Managers});
     _ ->
       {reply, #message_error{reason = internallookup}, State}
     end;
 
-handle_call_jointchatroom(Name, From, State = #state{ chatroomsmanagers = Managers}) ->
-  handle_call_jointchatroom(Name, Managers, From, State#state{chatroomsmanagers = Managers}).
+jointchatroom(Name, From, State = #state{ chatroomsmanagers = Managers}) ->
+  jointchatroom(Name, Managers, From, State#state{chatroomsmanagers = Managers}).
 
-handle_call_jointchatroom(Name, Managers, From, State = #state{ chatrooms = CHRMS }) ->
+jointchatroom(Name, Managers, From, State = #state{ chatrooms = CHRMS }) ->
   case chatroommanager:get_chat_room(Managers, Name) of
     nofind ->
       case catch get_chatroom_from_manager(Name, Managers) of
@@ -215,3 +172,15 @@ get_chatroom_from_manager(Name, [Node|T]) ->
 
 get_chatroom_from_manager(_Name, []) ->
   exit(noaccesspoint).
+
+loggedout_i(LoginName, State, _Reason) ->
+	io:format("expired ~p~n", LoginName),
+	exit(State#state.toucher, normal),
+	State#state{logged_in_as = nil}.
+
+touch_loop(LoginName) ->
+	timer:sleep(5000),
+	case login_server:touch(LoginName) of
+		#message_ok{result=touched} ->
+			 touch_loop(LoginName)
+	end.
