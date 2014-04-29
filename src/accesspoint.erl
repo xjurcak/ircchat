@@ -26,8 +26,7 @@
 -define(SERVER, ?MODULE).
 -include("messages.hrl").
 
--record(state, { chatrooms, chatroomsmanagers, client_pid=nil, logged_in_as=nil, toucher=nil}).
-
+-record(state, { chatrooms, username, chatrooms_ref, client_pid=nil, logged_in_as=nil, toucher=nil}).
 %%%===================================================================
 %%% API
 %%%===================================================================
@@ -49,7 +48,7 @@ connect(#netnode{name = Name, node = Node}) ->
 %%%===================================================================
 
 init([]) ->
-  {ok, #state{ chatrooms = dict:new(), chatroomsmanagers = []}, 100000}.
+  {ok, #state{ chatrooms = dict:new(), chatrooms_ref = dict:new()}, 100000}.
 
 handle_call({connect}, {ClientPid, _Tag}, State = #state{client_pid = nil}) ->
 	monitor(process, ClientPid),
@@ -74,22 +73,31 @@ handle_call({login, LoginName}, {ClientPid, _Tag}, State = #state{logged_in_as=L
 			{reply, #message_error{reason={already_logged_in, LoggedInAs}}, State}
 	end;
 
-handle_call({joinchatroom, ChatroomName}, {ClientPid, _Tag}, State = #state{chatrooms =  Chatrooms, client_pid = ClientPid}) ->
+handle_call({joinchatroom, ChatroomName}, From = {ClientPid, _Tag}, State = #state{chatrooms =  Chatrooms, client_pid = ClientPid, logged_in_as=LoginName, chatrooms_ref = R}) ->
 %%   Node = internal_lookup:
   login_checked(State, fun() -> 
 	  case dict:find(ChatroomName, Chatrooms) of
-	    {ok, Pid} ->
-	      case catch chatroom:join(Pid, ClientPid) of
-	        #message_ok{} ->
-	          {reply, #message_ok{}, State};
-	        #message_error{} = Error ->
-	          {reply, Error, State};
-	        _ ->
-	          jointchatroom(ChatroomName, ClientPid, State#state{ chatrooms = dict:delete_element(ChatroomName, Chatrooms)})
-	      end;
-	    _ ->
-	      jointchatroom(ChatroomName, ClientPid, State)
-	  end
+    {ok, _Pid} ->
+      {reply, #message_ok{ result = allreadyinchatroom}, State};
+    _ ->
+      case catch internal_lookup:find_room_or_create(ChatroomName) of
+        #message_ok{result = Pid} ->
+          case catch chatroom:join(Pid, From, LoginName) of
+            #message_ok{} ->
+              Ref = erlang:monitor(process, Pid),
+              {reply, #message_ok{ result = Pid}, State#state{ chatrooms = dict:append(ChatroomName, Pid, Chatrooms), chatrooms_ref = dict:append(Ref, ChatroomName, R)}};
+            #message_error{} = Error ->
+              {reply, Error, State};
+            Error ->
+              {reply, #message_error{reason = unknown ,reason_message = Error}, State}
+          end;
+
+        #message_error{} = Error ->
+          {reply, Error, State};
+        _ = Error ->
+          {reply, #message_error{reason = error, reason_message = Error}, State}
+      end
+  end
   end);
 handle_call(_Request, _From, State) ->
   {reply, ok, State}.
@@ -98,6 +106,17 @@ handle_cast({logout, LoginName, Reason}, State) ->
   {noreply, loggedout_i(LoginName, State, Reason)};
 handle_cast(_Request, State) ->
   {noreply, State}.
+
+handle_info({'DOWN', Ref, process, _Pid, _}, S = #state{chatrooms =  Chatrooms, chatrooms_ref = R}) ->
+  io:format("received down msg~n"),
+
+
+  case dict:find(Ref, R) of
+    {ok, [Name | _T]} ->
+      {noreply, S#state{chatrooms = dict:erase(Name, Chatrooms) , chatrooms_ref = dict:erase(Ref, R)}};
+    _ -> %% Not our responsibility
+      {noreply, S}
+  end;
 
 handle_info(timeout, _State) ->
   {stop, normal, #state{}};
@@ -129,49 +148,6 @@ is_logged_in(#state{logged_in_as=nil}) ->
 	false;
 is_logged_in(#state{logged_in_as=_}) ->
 	true.
-
-jointchatroom(Name, From, State = #state{ chatroomsmanagers = []}) ->
-  case internal_lookup:all_managers() of
-    #message_ok{result = Managers}->
-      jointchatroom(Name, Managers, From, State#state{chatroomsmanagers = Managers});
-    _ ->
-      {reply, #message_error{reason = internallookup}, State}
-    end;
-
-jointchatroom(Name, From, State = #state{ chatroomsmanagers = Managers}) ->
-  jointchatroom(Name, Managers, From, State#state{chatroomsmanagers = Managers}).
-
-jointchatroom(Name, Managers, From, State = #state{ chatrooms = CHRMS }) ->
-  case chatroommanager:get_chat_room(Managers, Name) of
-    nofind ->
-      case catch get_chatroom_from_manager(Name, Managers) of
-        {ok, Pid} ->
-          case catch chatroom:join(Pid, From) of
-            #message_ok{} ->
-              {reply, #message_ok{}, State#state{chatrooms = dict:append(Name, Pid, CHRMS)}};
-            #message_error{} = Error ->
-              {reply, #message_error{ reason = Error}, State#state{chatrooms = dict:append(Name, Pid, CHRMS)}};
-            _ ->
-              {reply, #message_error{reason = jointchatroom }, State}
-          end;
-
-        _ ->
-          {reply, #message_error{reason = nochatroom }, State}
-      end;
-    {ok, Pid} ->
-      {reply, #message_ok{}, State#state{ chatrooms = dict:append(Name, Pid, CHRMS)}}
-  end.
-
-get_chatroom_from_manager(Name, [Node|T]) ->
-  case catch chatroommanager:create_room(Node, Name) of
-    #message_ok{ result = Pid} ->
-      {ok, Pid};
-    _ ->
-      get_chatroom_from_manager(Name, T)
-  end;
-
-get_chatroom_from_manager(_Name, []) ->
-  exit(noaccesspoint).
 
 loggedout_i(LoginName, State, _Reason) ->
 	io:format("expired ~p~n", LoginName),

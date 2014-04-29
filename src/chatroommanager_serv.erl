@@ -109,9 +109,9 @@ init({Limit, Sup}) ->
   {stop, Reason :: term(), NewState :: #state{}}).
 
 handle_call({createroom, Name}, _From, State = #state{limit=N, sup=Sup, chatrooms = CHRS, refs=R}) when N > 0 ->
-  case dict:is_key(Name, CHRS) of
-    true ->
-      {reply, #message_error{reason = alreadyexist}, State};
+  case dict:find(Name, CHRS) of
+    {ok, [Pid | _T]} ->
+      {reply, #message_ok{result = Pid}, State};
     _ ->
       {ok, Pid} = supervisor:start_child(Sup, [Name]),
       Ref = erlang:monitor(process, Pid),
@@ -123,7 +123,7 @@ handle_call({createroom, _Name}, _From, S=#state{limit=N}) when N =< 0 ->
 
 handle_call({getroom, Name}, _From, S=#state{chatrooms = CHR}) ->
   case dict:find(Name, CHR) of
-    {ok, Pid} ->
+    {ok, [Pid | _T]} ->
         {reply, #message_ok{result = Pid}, S};
     _ ->
         {reply, #message_error{reason = noroom}, S}
@@ -165,7 +165,7 @@ handle_cast(_Request, State) ->
 handle_info({'DOWN', Ref, process, _Pid, _}, S = #state{refs=Refs}) ->
   io:format("received down msg~n"),
   case dict:find(Ref, Refs) of
-    {ok, Value} ->
+    {ok, [Value | _T]} ->
       handle_down_worker(Ref, S, Value);
     _ -> %% Not our responsibility
       {noreply, S}
