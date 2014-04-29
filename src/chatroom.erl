@@ -12,7 +12,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/1]).
+-export([start_link/1, join/3]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -25,6 +25,8 @@
 -define(SERVER, ?MODULE).
 
 -record(state, { name :: term()}).
+
+-include("messages.hrl").
 
 %%%===================================================================
 %%% API
@@ -41,6 +43,10 @@
 start_link(Name) ->
   io:format(Name),
   gen_server:start_link(?MODULE, [Name], []).
+
+join(Pid, From, UserName) ->
+  io:format("chatroom call joingroup pid is ~p~n",[Pid]),
+  gen_server:call(Pid, {joingroup, From, UserName}).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -78,6 +84,9 @@ init([Name]) ->
   {noreply, NewState :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term(), Reply :: term(), NewState :: #state{}} |
   {stop, Reason :: term(), NewState :: #state{}}).
+handle_call({joingroup, _AccessPointPid, _UserName}, _From, State) ->
+  {reply, #message_ok{result = joined}, State};
+
 handle_call(_Request, _From, State) ->
   {reply, ok, State}.
 

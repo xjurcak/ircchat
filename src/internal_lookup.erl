@@ -4,7 +4,7 @@
 
 
 %% API
--export([start/0, start_link/0, all_managers/0]).
+-export([start/0, start_link/0, all_managers/0, find_room_or_create/1]).
 -export([register_chrm/1, unregister_chrm/1, get_chrm/1, exists/0]).
 
 %% gen_server callbacks
@@ -20,7 +20,7 @@
 
 -define(MANAGERS_TABLE, internallookup).
 
--record(state, { managers = sets:new() :: set()}).
+-record(state, { managers = sets:new() :: set(), chatrooms = dict:new()}).
 
 %%%===================================================================
 %%% API
@@ -46,6 +46,9 @@ get_chrm(Name) ->
 all_managers() ->
   gen_server:call({global, ?SERVER_GLOBAL}, {all}).
 
+find_room_or_create(ChatroomName) ->
+  gen_server:call({global, ?SERVER_GLOBAL}, {getroom, ChatroomName}).
+
 %% starter behaviour
 start() ->
 	internal_lookup_supervisor:start().
@@ -60,7 +63,21 @@ start_link() ->
 
 init([]) ->
   Managers = managers_from_table(?MANAGERS_TABLE),
-  {ok, #state{ managers = Managers}}.
+  {ok, #state{ managers = Managers, chatrooms = dict:new()}}.
+
+handle_call({getroom, ChatroomName}, _From, State = #state{chatrooms =  Chatrooms, managers = Managers}) ->
+%%   Node = internal_lookup:
+  case dict:find(ChatroomName, Chatrooms) of
+    {ok, [Pid| _T]} ->
+      {reply, #message_ok{result = Pid}, State};
+    _ ->
+      case create_if_not_exist(ChatroomName, sets:to_list(Managers)) of
+        {ok, Pid} ->
+          {reply, #message_ok{result = Pid}, State#state{ chatrooms = dict:append(ChatroomName, Pid, Chatrooms)}};
+        _ ->
+          {reply, #message_error{reason = nochatroom}, State}
+      end
+  end;
 
 handle_call({hello}, _From, State) ->
   {reply, {ok, self()}, State};
@@ -174,3 +191,16 @@ pids_to_nodes([Pid|T], Nodes) ->
 
 key_from_node(#netnode{name = Name, node = Node}) ->
   lists:concat([Name, Node]).
+
+create_if_not_exist(Name, Managers) ->
+  case chatroommanager:get_chat_room(Managers, Name) of
+    nofind ->
+      case chatroommanager:create_room(Managers, Name) of
+        #message_ok{ result = Pid} ->
+          {ok, Pid};
+        _ ->
+          #message_error{reason = nochatroom}
+      end;
+    {ok, Pid} ->
+      {ok, Pid}
+  end.

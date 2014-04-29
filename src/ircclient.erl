@@ -58,6 +58,7 @@ handle_call({joingroup, Name}, _From, State = #state{accesspoint = {}}) ->
       {reply, {error, noaccesspoint}, State};
     #message_ok{result = Node} ->
       %try contact node
+      net_kernel:connect(Node#netnode.node),
       case catch accesspoint:join_chatroom(Node, Name) of
         #message_ok{} ->
           {reply, {ok, joined}, #state{accesspoint = Node}};
