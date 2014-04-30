@@ -73,16 +73,19 @@ handle_call({login, LoginName}, {ClientPid, _Tag}, State = #state{logged_in_as=L
 			{reply, #message_error{reason={already_logged_in, LoggedInAs}}, State}
 	end;
 
-handle_call({joinchatroom, ChatroomName}, From = {ClientPid, _Tag}, State = #state{chatrooms =  Chatrooms, client_pid = ClientPid, logged_in_as=LoginName, chatrooms_ref = R}) ->
+handle_call({joinchatroom, ChatroomName}, {ClientPid, _Tag}, State = #state{chatrooms =  Chatrooms, client_pid = ClientPid, logged_in_as=LoginName, chatrooms_ref = R}) ->
 %%   Node = internal_lookup:
   login_checked(State, fun() -> 
 	  case dict:find(ChatroomName, Chatrooms) of
     {ok, _Pid} ->
+      io:format("joint chatroom already joined"),
       {reply, #message_ok{ result = allreadyinchatroom}, State};
     _ ->
+      io:format("joint chatroom find room or create"),
       case catch internal_lookup:find_room_or_create(ChatroomName) of
         #message_ok{result = Pid} ->
-          case catch chatroom:join(Pid, From, LoginName) of
+          io:format("joint chatroom join chatroom"),
+          case catch chatroom:join(Pid, self(), LoginName) of
             #message_ok{} ->
               Ref = erlang:monitor(process, Pid),
               {reply, #message_ok{ result = Pid}, State#state{ chatrooms = dict:append(ChatroomName, Pid, Chatrooms), chatrooms_ref = dict:append(Ref, ChatroomName, R)}};

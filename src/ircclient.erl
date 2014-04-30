@@ -16,7 +16,7 @@
 -behaviour(starter).
 
 %% API
--export([get_access_point/0, start/0, join_the_group/1]).
+-export([get_access_point/0, start/0, join_the_group/1, login/1]).
 
 -export([start_link/0, stop/1]).
 -export([init/1, handle_call/3, handle_cast/2,
@@ -39,6 +39,8 @@ get_access_point() ->
 join_the_group(Name) ->
   gen_server:call(?MODULE, {joingroup, Name}).
 
+login(Name) ->
+  gen_server:call(?MODULE, {login, Name}).
 
 start_link() ->
   gen_server:start_link({local, ?MODULE}, ?MODULE,  [] , []).
@@ -49,24 +51,46 @@ stop(Pid) ->
 init([]) ->
   {ok, #state{}}.
 
+handle_call({login, Name}, _From, State = #state{accesspoint = {}}) ->
+
+  do_func_with_accesspoint_connect(State, fun(Node) ->
+    %try contact node
+    net_kernel:connect(Node#netnode.node),
+
+    case catch accesspoint:login(Node, Name) of
+      #message_ok{} ->
+        {reply, {ok, logged}, State#state{accesspoint = Node}};
+      Error->
+        {reply, {error, Error}, State#state{accesspoint = Node}}
+    end
+  end);
+
+handle_call({login, Name}, From, State = #state{accesspoint = Node}) ->
+
+    case catch accesspoint:login(Node, Name) of
+      #message_ok{} ->
+        {reply, {ok, logged}, State};
+      #message_error{ reason = Reason} ->
+        {reply, {error, Reason}, State};
+      _ ->
+        %accesspoint probably down try new access point
+        handle_call({login, Name}, From, State#state{accesspoint = {}})
+    end;
+
 %%% OTP Callbacks
 handle_call({joingroup, Name}, _From, State = #state{accesspoint = {}}) ->
-  case get_access_point() of
-    {error, nolookupserver} = Error ->
-      {reply, Error, State};
-    #message_error{reason = noaccesspoint } ->
-      {reply, {error, noaccesspoint}, State};
-    #message_ok{result = Node} ->
-      %try contact node
-      net_kernel:connect(Node#netnode.node),
+
+  do_func_with_accesspoint_connect(State, fun(Node) ->
+    %try contact node
+    net_kernel:connect(Node#netnode.node),
+
       case catch accesspoint:join_chatroom(Node, Name) of
         #message_ok{} ->
-          {reply, {ok, joined}, #state{accesspoint = Node}};
-        _ ->
-          {reply, {error, 'error when conntect accesspoint'}, #state{accesspoint = Node}}
-      end;
-    Error -> {reply, {error, Error}, State}
-  end;
+          {reply, {ok, joined}, State#state{accesspoint = Node}};
+        Error->
+          {reply, {error, Error}, State#state{accesspoint = Node}}
+      end
+    end);
 
 handle_call({joingroup, Name}, From, State = #state{accesspoint = Node}) ->
   case catch accesspoint:join_chatroom(Node, Name) of
@@ -100,3 +124,19 @@ code_change(_OldVsn, State, _Extra) ->
   {ok, State}.
 
 terminate(_Reason, _State) -> ok.
+
+do_func_with_accesspoint_connect(State, Func) ->
+  case get_access_point() of
+    {error, nolookupserver} = Error ->
+      {reply, Error, State};
+    #message_error{reason = noaccesspoint } ->
+      {reply, {error, noaccesspoint}, State};
+    #message_ok{result = Node} ->
+      %try contact node
+      case accesspoint:connect(Node) of
+        #message_ok{} ->
+            Func(Node);
+        Error -> {reply, {accesspointconnecterror, Error}, State}
+       end;
+    Error -> {reply, {error, Error}, State}
+  end.
