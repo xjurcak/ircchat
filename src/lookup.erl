@@ -1,22 +1,12 @@
-%%%-------------------------------------------------------------------
-%%% @author xjurcak
-%%% @copyright (C) 2014, <COMPANY>
-%%% @doc
-%%%
-%%% @end
-%%% Created : 14. Apr 2014 2:04 PM
-%%%-------------------------------------------------------------------
 -module(lookup).
--author("xjurcak").
 
 -behaviour(gen_server).
--behaviour(backable).
 -behaviour(starter).
 
 %% API
 -export([start/0, get_access_point/0, register_access_point_manager/1, all_managers/0]).
 
--export([start_up/0, global_name/0, on_before_backup/1, on_master_start/0, on_slave_start/1]).
+-export([start_link/0]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -25,9 +15,6 @@
   handle_info/2,
   terminate/2,
   code_change/3]).
-
--define(SERVER, ?MODULE).
--define(MANAGERS_TABLE, lookup).
 
 -include("lookup.hrl").
 -include("messages.hrl").
@@ -38,55 +25,20 @@
 %%% API
 %%%===================================================================
 start() ->
-	 backable:backup(node(),  ?MODULE).
+	lookup_sup:start().
+
+% should not be used for server start!!!
+start_link() ->
+  gen_server:start_link({global, ?LOOKUP_SERVER_GLOBAL}, ?MODULE, [], []).
 
 get_access_point() ->
-  gen_server:call({global, global_name()}, {accesspoint}).
+  gen_server:call({global, ?LOOKUP_SERVER_GLOBAL}, {accesspoint}).
 
 register_access_point_manager(AccessPointManager) ->
-  gen_server:call({global, global_name()}, {accesspointmanager, AccessPointManager}).
+  gen_server:call({global, ?LOOKUP_SERVER_GLOBAL}, {accesspointmanager, AccessPointManager}).
 
 all_managers() ->
-  gen_server:call({global, global_name()}, {all}).
-
-%%%===================================================================
-%%% backable callbacks
-%%%===================================================================
-
-start_up() ->
-	Ret = gen_server:start_link({local, ?SERVER}, ?MODULE, [], []),
-	case Ret of
-		{ok, Pid} -> unlink(Pid)
-	end,
-	Ret.
-
-on_before_backup(_Node) ->
-	io:format("initializing node '~p' ~n", [node()]),
-	mnesia:delete_schema([node()]),
-	case global:whereis_name(global_name()) of
-		undefined ->
-			on_master_start();
-		Pid ->
-			on_slave_start(node(Pid))
-	end.
-
-on_master_start() ->
-	io:format("initializing as MASTER node ~p~n", [node()]),	
-	mnesia:start(),
-    mnesia:create_schema([node()]),
-    mnesia:create_table(?MANAGERS_TABLE, []).
-	 
-
-on_slave_start(MasterNode) ->
-	io:format("initializing as SLAVE node ~p~n", [node()]),	
-	mnesia:start(),
-    mnesia:change_config(extra_db_nodes, [MasterNode]),
-    mnesia:change_table_copy_type(schema, node(), disc_copies),
-    Tabs = mnesia:system_info(tables) -- [schema],
-    [mnesia:add_table_copy(Tab,node(), disc_copies) || Tab <- Tabs].
-
-global_name() ->
-	?LOOKUP_SERVER_GLOBAL.
+  gen_server:call({global, ?LOOKUP_SERVER_GLOBAL}, {all}).
 
 %%%===================================================================
 %%% gen_server callbacks

@@ -28,10 +28,11 @@ start() ->
   start_link().
 
 get_access_point() ->
-  case net_adm:ping(?LOOKUP_SERVER) of
-    pang ->
+  global:sync(),
+  case global:whereis_name(?LOOKUP_SERVER_GLOBAL) of
+    undefined ->
       {error, nolookupserver};
-    pong ->
+    _ ->
       timer:sleep(2000),
       lookup:get_access_point()
   end.
@@ -49,6 +50,7 @@ stop(Pid) ->
   gen_server:call(Pid, stop).
 
 init([]) ->
+  timer:send_after(5000,self(),{keep_alive}),
   {ok, #state{}}.
 
 handle_call({login, Name}, _From, State = #state{accesspoint = {}}) ->
@@ -112,6 +114,15 @@ handle_call(_Msg, _From, State) ->
 handle_cast(_Msg, State) ->
   {noreply, State}.
 
+handle_info({keep_alive}, State = #state{accesspoint = {}}) ->
+  {noreply, State};
+handle_info({keep_alive}, State = #state{accesspoint = Node}) ->
+  case accesspoint:keep_alive(Node) of
+  	#message_ok{result=alive} ->
+	  {noreply, State};
+	_ ->
+  	  {noreply, State#state{accesspoint = {}}}
+  end;
 handle_info(_, State) ->
   {noreply, State}.
 %% We cannot use handle_info below: if that ever happens,

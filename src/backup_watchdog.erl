@@ -40,17 +40,12 @@ check_and_spawn(State) ->
 	end.
 
 spawn_it(State) ->
-	Ret = apply(State#state.module, State#state.func, State#state.args), 
-	case Ret of
-		{ok, Pid} ->
-			case global:register_name(State#state.g_name, Pid) of 
-				yes ->
-					io:format("Registered ~p as '~p' with ~p!!!~n", [Pid, State#state.g_name, State]),
-					spawned;
-				_ ->
-					exit(Pid, ok),
-					couldnt_register	
-			end;		
+	spawn(State#state.module, State#state.func, State#state.args), 
+	global:sync(),
+	case Pid = global:whereis_name(State#state.g_name) of 
+		undefined ->
+			couldnt_register;	
 		_ ->
-			nothing_started	
+			io:format("Registered ~p as '~p' with ~p!!!~n", [Pid, State#state.g_name, State]),
+			spawned
 	end.

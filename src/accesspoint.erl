@@ -13,7 +13,6 @@
 
 %% API
 -export([start_link/1, login/2, connect/1, join_chatroom/2]).
--export([touch_loop/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -23,10 +22,10 @@
   terminate/2,
   code_change/3]).
 
--define(SERVER, ?MODULE).
+-define(EXPIRATION_TIME, 30).
 -include("messages.hrl").
 
--record(state, { chatrooms, username, chatrooms_ref, client_pid=nil, logged_in_as=nil, toucher=nil}).
+-record(state, { chatrooms, username, chatrooms_ref, client_pid=nil, client_exp=nil, logged_in_as=nil}).
 %%%===================================================================
 %%% API
 %%%===================================================================
@@ -41,6 +40,8 @@ login(#netnode{name = Name, node = Node}, LoginName) ->
   gen_server:call({tracker, Node}, {login, LoginName}).
 connect(#netnode{name = Name, node = Node}) ->
   gen_server:call({Name, Node}, {connect}).
+keep_alive(#netnode{name = Name, node = Node}) ->
+  gen_server:call({Name, Node}, {keep_alive}).
 
 
 %%%===================================================================
@@ -48,10 +49,11 @@ connect(#netnode{name = Name, node = Node}) ->
 %%%===================================================================
 
 init([]) ->
+  timer:send_after(5000,self(),{check_expiration}),
+  timer:send_after(5000,self(),{touch}),
   {ok, #state{ chatrooms = dict:new(), chatrooms_ref = dict:new()}, 100000}.
 
 handle_call({connect}, {ClientPid, _Tag}, State = #state{client_pid = nil}) ->
-	monitor(process, ClientPid),
 	{reply, #message_ok{result={connected}}, State#state{client_pid = ClientPid}};
 handle_call({connect}, {ClientPid, _Tag}, State = #state{client_pid = ClientPid}) ->
 	{reply, #message_error{reason={already_connected}}, State};
@@ -64,7 +66,7 @@ handle_call({login, LoginName}, {ClientPid, _Tag}, State = #state{logged_in_as=L
 		nil ->
 			case login_server:login(LoginName, self()) of
 				#message_ok{result=logged} = Result ->
-					NewState = State#state{logged_in_as=LoginName,toucher=spawn_link(?MODULE, touch_loop, [LoginName])},
+					NewState = State#state{logged_in_as=LoginName},
 					{reply, Result, NewState};
 				#message_ok{result=Result} -> 
 					{reply, #message_error{reason={Result, LoggedInAs}}, State}
@@ -102,6 +104,11 @@ handle_call({joinchatroom, ChatroomName}, {ClientPid, _Tag}, State = #state{chat
       end
   end
   end);
+
+handle_call({keep_alive}, _From, State = #state{client_exp=nil}) ->
+  {reply, #message_ok{result=disconnected}, State};
+handle_call({keep_alive}, _From, State) ->
+  {reply, #message_ok{result=alive}, State#state{client_exp=timestamp(now())+?EXPIRATION_TIME}};
 handle_call(_Request, _From, State) ->
   {reply, ok, State}.
 
@@ -123,9 +130,26 @@ handle_info({'DOWN', Ref, process, _Pid, _}, S = #state{chatrooms =  Chatrooms, 
 
 handle_info(timeout, _State) ->
   {stop, normal, #state{}};
-
 handle_info({'DOWN', _MonitorRef, _Type, Object, _Info}, State = #state{client_pid = Object}) ->
   {stop,client_down,State};
+
+handle_info({check_expiration}, State = #state{client_exp=nil}) ->
+  {noreply, State};
+handle_info({check_expiration}, State = #state{client_exp=ClientExp})->
+ Now =  timestamp(now()),
+ if 
+    ClientExp < Now -> 
+      {noreply, clear_client(State)};
+	true ->
+	  {noreply, State}
+ end;
+
+handle_info({touch}, State = #state{logged_in_as=nil}) ->
+  {noreply, State};
+handle_info({touch}, State = #state{client_exp=LoggedInAs}) ->
+  touch(LoggedInAs),
+  {noreply, State};
+
 handle_info(_Info, State) ->
   {noreply, State}.
 
@@ -138,6 +162,9 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+clear_client(State) ->
+	State#state{client_pid = nil, client_exp = nil, logged_in_as = nil}.
 
 login_checked(State, Func) ->
 	case is_logged_in(State) of
@@ -154,12 +181,10 @@ is_logged_in(#state{logged_in_as=_}) ->
 
 loggedout_i(LoginName, State, _Reason) ->
 	io:format("expired ~p~n", LoginName),
-	exit(State#state.toucher, normal),
 	State#state{logged_in_as = nil}.
 
-touch_loop(LoginName) ->
-	timer:sleep(5000),
-	case login_server:touch(LoginName) of
-		#message_ok{result=touched} ->
-			 touch_loop(LoginName)
-	end.
+touch(LoginName) ->
+	login_server:touch(LoginName).
+
+timestamp({Megasecs, Secs, _}) ->
+     (Megasecs * 1000000) + Secs.

@@ -18,10 +18,6 @@
   terminate/2,
   code_change/3]).
 
--define(SERVER, ?MODULE).
--define(LOGINS_TABLE, login).
--define(EXPIRATION, 30).
-
 -include("login_server.hrl").
 -include("messages.hrl").
 

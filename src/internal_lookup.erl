@@ -18,8 +18,6 @@
 -include("internal_lookup.hrl").
 -include("messages.hrl").
 
--define(MANAGERS_TABLE, internallookup).
-
 -record(state, { managers = sets:new() :: set(), chatrooms = dict:new()}).
 
 %%%===================================================================

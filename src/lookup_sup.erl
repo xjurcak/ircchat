@@ -1,5 +1,5 @@
--module(internal_lookup_supervisor).
--include("internal_lookup.hrl").
+-module(lookup_sup).
+-include("lookup.hrl").
 
 -behaviour(supervisor).
 -behaviour(backable).
@@ -17,6 +17,7 @@
 start() ->
 	 backable:backup(node(),  ?MODULE).
 
+
 %%%===================================================================
 %%% backable callbacks
 %%%===================================================================
@@ -29,7 +30,7 @@ start_up() ->
 on_before_backup(_Node) ->
 	io:format("initializing node '~p' ~n", [node()]),
 	mnesia:delete_table(?MANAGERS_TABLE),
-	case global:whereis_name(?SUPERVISOR_GLOBAL) of
+	case global:whereis_name(global_name()) of
 		undefined ->
 			on_master_start();
 		Pid ->
@@ -40,7 +41,7 @@ on_master_start() ->
 	io:format("initializing as MASTER node ~p~n", [node()]),	
 	mnesia:start(),
     mnesia:create_schema([node()]),
-    mnesia:create_table(chrm, []).
+    mnesia:create_table(?MANAGERS_TABLE, []).
 	 
 
 on_slave_start(MasterNode) ->
@@ -51,7 +52,7 @@ on_slave_start(MasterNode) ->
     mnesia:add_table_copy(?MANAGERS_TABLE,node(), disc_copies).
 
 global_name() ->
-	?SUPERVISOR_GLOBAL.
+	?LOOKUP_SERVER_SUP_GLOBAL.
 
 %%%===================================================================
 %%% supervisor callbacks
@@ -59,10 +60,9 @@ global_name() ->
 
 init(_Args) ->
     {ok, {{one_for_one, 1, 60},
-          [{internal_lookup, {internal_lookup, start_link, []},
-            permanent, brutal_kill, worker, [internal_lookup]}]}}.
+          [{lookup, {lookup, start_link, []},
+            permanent, brutal_kill, worker, [lookup]}]}}.
 
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
-

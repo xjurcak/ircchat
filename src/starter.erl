@@ -18,7 +18,7 @@ start(_Module, _Node, 0) ->
 start(Module, Node, Count) ->
 	case net_adm:ping(Node) of
 		pong ->
-			timer:sleep(2000), %% wait till synced data
+			global:sync(), %% wait till synced data
 			apply(Module, start, []);
 		pang ->
 			timer:sleep(5000),

@@ -22,13 +22,13 @@ start() ->
 %%%===================================================================
 
 start_up() ->
-	Ret = {ok, Pid} = supervisor:start_link(?MODULE, []),
+	Ret = {ok, Pid} = supervisor:start_link({global, global_name()}, ?MODULE, []),
 	unlink(Pid),
 	Ret.
 
 on_before_backup(_Node) ->
 	io:format("initializing node '~p' ~n", [node()]),
-	mnesia:delete_schema([node()]),
+	mnesia:delete_table(?LOGINS_TABLE),
 	case global:whereis_name(global_name()) of
 		undefined ->
 			on_master_start();
@@ -40,7 +40,7 @@ on_master_start() ->
 	io:format("initializing as MASTER node ~p~n", [node()]),	
 	mnesia:start(),
     mnesia:create_schema([node()]),
-    mnesia:create_table(chrm, []).
+    mnesia:create_table(?LOGINS_TABLE, []).
 	 
 
 on_slave_start(MasterNode) ->
@@ -48,8 +48,7 @@ on_slave_start(MasterNode) ->
 	mnesia:start(),
     mnesia:change_config(extra_db_nodes, [MasterNode]),
     mnesia:change_table_copy_type(schema, node(), disc_copies),
-    Tabs = mnesia:system_info(tables) -- [schema],
-    [mnesia:add_table_copy(Tab,node(), disc_copies) || Tab <- Tabs].
+    mnesia:add_table_copy(?LOGINS_TABLE,node(), disc_copies).
 
 global_name() ->
 	?LOGIN_SERVER_SUP_GLOBAL.
