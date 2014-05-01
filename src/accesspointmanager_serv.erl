@@ -50,7 +50,7 @@ start_link(Limit, Sup) ->
 -spec(register_lookup() ->
   {ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
 register_lookup() ->
-  lookup:register_access_point_manager({#netnode{name = ?SERVER, node = node()}}).
+  lookup:register_access_point_manager(#netnode{name = ?SERVER, node = node()}).
 
 -spec(get_access_point( Node :: netnode() ) ->
   {ok, Node :: node()} | full ).

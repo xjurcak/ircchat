@@ -16,7 +16,7 @@
 -behaviour(starter).
 
 %% API
--export([get_access_point/0, start/0, join_the_group/1, login/1, send_message/2, receive_messages/3]).
+-export([start/0, join_the_group/1, login/1, send_message/2, receive_messages/3]).
 
 -export([start_link/0, stop/1]).
 -export([init/1, handle_call/3, handle_cast/2,
@@ -26,15 +26,6 @@
 
 start() ->
   start_link().
-
-get_access_point() ->
-  global:sync(),
-  case global:whereis_name(?LOOKUP_SERVER_GLOBAL) of
-    undefined ->
-      {error, nolookupserver};
-    _ ->
-      lookup:get_access_point()
-  end.
 
 join_the_group(Name) ->
   gen_server:call(?MODULE, {joingroup, Name}).
@@ -163,9 +154,7 @@ code_change(_OldVsn, State, _Extra) ->
 terminate(_Reason, _State) -> ok.
 
 do_func_with_accesspoint_connect(State, Func) ->
-  case get_access_point() of
-    {error, nolookupserver} = Error ->
-      {reply, Error, State};
+  case catch lookup:get_access_point() of
     #message_error{reason = noaccesspoint } ->
       {reply, {error, noaccesspoint}, State};
     #message_ok{result = Node} ->
