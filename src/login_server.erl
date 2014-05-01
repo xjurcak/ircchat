@@ -22,7 +22,6 @@
 -include("messages.hrl").
 
 -record(state, {}).
--record(login, {name, expiration, listener}).
 
 %%%===================================================================
 %%% API
@@ -111,7 +110,6 @@ login_i(LoginName, Listener) ->
 	transac_return(mnesia:transaction(fun() ->
 	  case mnesia:read(?LOGINS_TABLE, LoginName) of
 	    [] ->
-          io:format("~p~n",[mnesia:table_info(login, all)]),
 		  mnesia:write(Login),
 		  logged;
 	    _->

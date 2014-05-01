@@ -40,7 +40,7 @@ on_master_start() ->
 	io:format("initializing as MASTER node ~p~n", [node()]),	
 	mnesia:start(),
     mnesia:create_schema([node()]),
-    mnesia:create_table(?LOGINS_TABLE, []).
+    mnesia:create_table(?LOGINS_TABLE, [{attributes, record_info(fields,login)}]).
 	 
 
 on_slave_start(MasterNode) ->

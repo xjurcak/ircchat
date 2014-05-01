@@ -33,7 +33,6 @@ get_access_point() ->
     undefined ->
       {error, nolookupserver};
     _ ->
-      timer:sleep(2000),
       lookup:get_access_point()
   end.
 
@@ -56,7 +55,7 @@ stop(Pid) ->
   gen_server:call(Pid, stop).
 
 init([]) ->
-  timer:send_after(5000,self(),{keep_alive}),
+  timer:send_interval(5000,self(),{keep_alive}),
   {ok, #state{}}.
 
 handle_call({receivemessages, Messages, Group}, _From, State) ->

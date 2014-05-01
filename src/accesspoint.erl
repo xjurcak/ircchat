@@ -12,7 +12,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/1, login/2, connect/1, join_chatroom/2, send_message/3, receive_messages/3]).
+-export([start_link/1, keep_alive/1, login/2, connect/1, join_chatroom/2, send_message/3, receive_messages/3]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -48,13 +48,14 @@ join_chatroom(#netnode{name = Name, node = Node}, ChatroomName) ->
   gen_server:call({Name, Node}, {joinchatroom, ChatroomName}).
 
 login(#netnode{name = Name, node = Node}, LoginName) ->
-  gen_server:call({tracker, Node}, {login, LoginName}).
+  gen_server:call({Name, Node}, {login, LoginName}).
 
 send_message(#netnode{name = Name, node = Node}, Message, GroupName)->
   gen_server:call({Name, Node}, {sendmessagegroup, Message, GroupName}).
 
 connect(#netnode{name = Name, node = Node}) ->
   gen_server:call({Name, Node}, {connect}).
+
 keep_alive(#netnode{name = Name, node = Node}) ->
   gen_server:call({Name, Node}, {keep_alive}).
 
@@ -64,8 +65,8 @@ keep_alive(#netnode{name = Name, node = Node}) ->
 %%%===================================================================
 
 init([]) ->
-  timer:send_after(5000,self(),{check_expiration}),
-  timer:send_after(5000,self(),{touch}),
+  timer:send_interval(5000,self(),{check_expiration}),
+  timer:send_interval(5000,self(),{touch}),
   {ok, #state{ chatrooms = dict:new(), chatrooms_ref = dict:new()}, 100000}.
 
 handle_call({sendmessagegroup, Message, GroupName}, {ClientPid, _Tag}, State = #state{client_pid = ClientPid, chatrooms = Chatrooms}) ->

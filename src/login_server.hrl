@@ -4,3 +4,5 @@
 -define(SERVER, ?MODULE).
 -define(LOGINS_TABLE, login).
 -define(EXPIRATION, 30).
+
+-record(login, {name, expiration, listener}).
