@@ -37,13 +37,10 @@
 %%%===================================================================
 %%% API
 %%%===================================================================
-
 start() ->
 	 backable:backup(node(),  ?MODULE).
 
-
 get_access_point() ->
-  %gen_server:call({global, ?LOOKUP_SERVER_GLOBAL}, {accesspoint}).
   gen_server:call({global, global_name()}, {accesspoint}).
 
 register_access_point_manager(AccessPointManager) ->

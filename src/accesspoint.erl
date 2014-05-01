@@ -38,7 +38,7 @@ start_link(Name) ->
 join_chatroom(#netnode{name = Name, node = Node}, ChatroomName) ->
   gen_server:call({Name, Node}, {joinchatroom, ChatroomName}).
 login(#netnode{name = Name, node = Node}, LoginName) ->
-  gen_server:call({Name, Node}, {login, LoginName}).
+  gen_server:call({tracker, Node}, {login, LoginName}).
 connect(#netnode{name = Name, node = Node}) ->
   gen_server:call({Name, Node}, {connect}).
 

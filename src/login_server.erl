@@ -1,13 +1,12 @@
 -module(login_server).
 
 -behaviour(gen_server).
--behaviour(backable).
 -behaviour(starter).
 
 %% API
--export([start/0, login/1, login/2, logout/1, touch/1, is_logged/1]).
+-export([start_link/0]).
 
--export([start_up/0, global_name/0, on_before_backup/1, on_master_start/0, on_slave_start/1]).
+-export([start/0, login/1, login/2, logout/1, touch/1, is_logged/1]).
 
 -export([clean_loop/0]).
 
@@ -33,8 +32,13 @@
 %%% API
 %%%===================================================================
 
+%% starter behaviour
 start() ->
-	backable:backup(node(),  ?MODULE).
+	login_server_sup:start().
+
+% should not be used for server start!!!
+start_link() ->
+  gen_server:start_link({global, ?LOGIN_SERVER_GLOBAL}, ?MODULE, [], []).
 
 login(LoginName) ->
   login(LoginName, nil).
@@ -49,45 +53,6 @@ touch(LoginName) ->
 
 is_logged(LoginName) ->
   gen_server:call({global, ?LOGIN_SERVER_GLOBAL}, {is_logged, LoginName}).
-
-%%%===================================================================
-%%% backable callbacks
-%%%===================================================================
-
-start_up() ->
-	Ret = gen_server:start_link({local, ?MODULE}, ?MODULE, [], []),
-	case Ret of
-		{ok, Pid} -> unlink(Pid)
-	end,
-	Ret.
-
-on_before_backup(_Node) ->
-	io:format("initializing node '~p' ~n", [node()]),
-	mnesia:delete_schema([node()]),
-	case global:whereis_name(global_name()) of
-		undefined ->
-			on_master_start();
-		Pid ->
-			on_slave_start(node(Pid))
-	end.
-
-on_master_start() ->
-	io:format("initializing as MASTER node ~p~n", [node()]),	
-	mnesia:start(),
-    mnesia:create_schema([node()]),
-    mnesia:create_table(?LOGINS_TABLE, [{attributes, record_info(fields,login)}]).
-	 
-
-on_slave_start(MasterNode) ->
-	io:format("initializing as SLAVE node ~p~n", [node()]),	
-	mnesia:start(),
-    mnesia:change_config(extra_db_nodes, [MasterNode]),
-    mnesia:change_table_copy_type(schema, node(), disc_copies),
-    Tabs = mnesia:system_info(tables) -- [schema],
-    [mnesia:add_table_copy(Tab,node(), disc_copies) || Tab <- Tabs].
-
-global_name() ->
-	?LOGIN_SERVER_GLOBAL.
 
 %%%===================================================================
 %%% gen_server callbacks

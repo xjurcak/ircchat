@@ -48,6 +48,7 @@ spawn_it(State) ->
 					io:format("Registered ~p as '~p' with ~p!!!~n", [Pid, State#state.g_name, State]),
 					spawned;
 				_ ->
+					exit(Pid, ok),
 					couldnt_register	
 			end;		
 		_ ->
