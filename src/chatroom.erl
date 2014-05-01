@@ -12,7 +12,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/1, join/3]).
+-export([start_link/1, join/3, get_all_users/1, send_message/2, find_name/2]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -24,7 +24,12 @@
 
 -define(SERVER, ?MODULE).
 
--record(state, { name :: term()}).
+-record(state, { name :: term(),
+                 joinedUsers = [],
+                  messages = []}).
+
+-record(user, { accesspoinpid :: pid(), name :: term(), ref}).
+-record(message, {message, timestamp, from}).
 
 -include("messages.hrl").
 
@@ -47,6 +52,12 @@ start_link(Name) ->
 join(Pid, From, UserName) ->
   io:format("chatroom call joingroup pid is ~p ~p ~p~n",[Pid, From, UserName]),
   gen_server:call(Pid, {joingroup, From, UserName}).
+
+send_message(Pid, Message)->
+  gen_server:call(Pid, {sendmessage, Message}).
+
+get_all_users(Pid) ->
+  gen_server:call(Pid, {getusers}).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -84,12 +95,39 @@ init([Name]) ->
   {noreply, NewState :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term(), Reply :: term(), NewState :: #state{}} |
   {stop, Reason :: term(), NewState :: #state{}}).
-handle_call({joingroup, _AccessPointPid, _UserName}, From, State) ->
+
+handle_call({sendmessage, Message}, {Pid, _Tag}, State = #state{ messages = Massages, joinedUsers = Users, name = Name}) ->
+ io:format("send message, from Pid: ~p~n Users: ~p~n", [Pid, Users]),
+ case find_name( Users, Pid) of
+   {ok, UserName} ->
+     io:format("send message, Name found: ~p~n", [UserName]),
+     NewMessages = [#message{ message = Message, timestamp = calendar:local_time(),  from = UserName} | Massages],
+     case catch accesspoint:receive_messages(pid_list_from_users(Users, []), NewMessages, Name) of
+       Result ->
+          io:format("resend message Result, ~p~n", [Result])
+     end,
+     {reply, #message_ok{result=NewMessages}, State#state{messages = NewMessages}};
+  Error ->
+     {reply, #message_error{reason = Error}, State}
+ end;
+
+handle_call({getusers}, _From, State = #state{ joinedUsers = Users}) ->
+  {reply, #message_ok{result = Users}, State};
+
+handle_call({joingroup, AccessPointPid, UserName}, From, State = #state{ joinedUsers = Users}) ->
   io:format("chatroom handle_call joingroup pid is ~p~n",[From]),
-  {reply, #message_ok{result = joined}, State};
+  case insert_user_if_not_exist(AccessPointPid, UserName, Users) of
+    nameaccesspointpidconflict ->
+      {reply, #message_error{reason = nameaccesspointpidconflict}, State};
+    [_H| _T] = NewUsersr ->
+      {reply, #message_ok{result = joined}, State#state{ joinedUsers = NewUsersr}};
+    Error ->
+      {reply, #message_error{reason = unknown, reason_message = Error}, State}
+  end;
 
 handle_call(_Request, _From, State) ->
   {reply, ok, State}.
+
 
 %%--------------------------------------------------------------------
 %% @private
@@ -119,8 +157,24 @@ handle_cast(_Request, State) ->
   {noreply, NewState :: #state{}} |
   {noreply, NewState :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term(), NewState :: #state{}}).
+
+handle_info({'DOWN', Ref, process, _Pid, _}, S = #state{ joinedUsers = Users}) ->
+  io:format("chatroom received down msg~n"),
+  {noreply, S#state{ joinedUsers = remove_user(Users, Ref, [])}};
+
 handle_info(_Info, State) ->
   {noreply, State}.
+
+remove_user([#user{ref = Ref} | T], Ref, Acc) ->
+  remove_user(T, Ref, Acc);
+
+remove_user([H | T] , Ref, Acc) ->
+  remove_user(T, Ref, [H| Acc]);
+
+remove_user([] , _Ref, Acc) ->
+  Acc.
+
+
 
 %%--------------------------------------------------------------------
 %% @private
@@ -155,3 +209,43 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+find_name([#user{accesspoinpid = Pid, name = Name} | _T], Pid) ->
+  {ok, Name};
+
+find_name([_H | T], Pid) ->
+  find_name(T, Pid);
+
+find_name([], _Pid) ->
+  notjoineduser.
+
+insert_user_if_not_exist(AccessPointPid, UserName, Users) ->
+  case exist_user(UserName, AccessPointPid, Users) of
+    true ->
+      Users;
+    false ->
+      Ref = erlang:monitor(process, AccessPointPid),
+      [#user{ name = UserName, accesspoinpid = AccessPointPid, ref = Ref}| Users];
+    nameaccesspointpidconflict ->
+      nameaccesspointpidconflict
+  end.
+
+
+exist_user(UserName, AccessPointPid, [#user{name = UserName, accesspoinpid = AccessPointPid} | _T]) ->
+  true;
+
+exist_user(UserName, _AccessPointPid, [#user{name = UserName} | _T]) ->
+  nameaccesspointpidconflict;
+
+exist_user(UserName, AccessPointPid, [#user{} | T]) ->
+  exist_user(UserName, AccessPointPid, T);
+
+exist_user(_UserName, _AccessPointPid, []) ->
+  false.
+
+pid_list_from_users([#user{accesspoinpid = Pid} | T], Acc) ->
+  pid_list_from_users(T, [Pid| Acc]);
+
+
+pid_list_from_users([], Acc) ->
+  Acc.
