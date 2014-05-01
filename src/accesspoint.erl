@@ -12,7 +12,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/1, login/2, connect/1, join_chatroom/2]).
+-export([start_link/1, login/2, connect/1, join_chatroom/2, send_message/3, receive_messages/3]).
 -export([touch_loop/1]).
 
 %% gen_server callbacks
@@ -35,10 +35,25 @@ start_link(Name) ->
   io:format(Name),
   gen_server:start_link({local, Name}, ?MODULE, [], []).
 
+receive_messages([Pid| T], Messages, Group) ->
+  io:format("receive_massages multicall pidlist ~p~n", [Pid]),
+  case catch gen_server:cast(Pid, {receivemessages, Messages, Group})of
+    _ ->
+      receive_messages(T, Messages, Group)
+  end;
+
+receive_messages([], _Messages, _Group) ->
+   #message_ok{}.
+
 join_chatroom(#netnode{name = Name, node = Node}, ChatroomName) ->
   gen_server:call({Name, Node}, {joinchatroom, ChatroomName}).
+
 login(#netnode{name = Name, node = Node}, LoginName) ->
   gen_server:call({Name, Node}, {login, LoginName}).
+
+send_message(#netnode{name = Name, node = Node}, Message, GroupName)->
+  gen_server:call({Name, Node}, {sendmessagegroup, Message, GroupName}).
+
 connect(#netnode{name = Name, node = Node}) ->
   gen_server:call({Name, Node}, {connect}).
 
@@ -49,6 +64,23 @@ connect(#netnode{name = Name, node = Node}) ->
 
 init([]) ->
   {ok, #state{ chatrooms = dict:new(), chatrooms_ref = dict:new()}, 100000}.
+
+handle_call({sendmessagegroup, Message, GroupName}, {ClientPid, _Tag}, State = #state{client_pid = ClientPid, chatrooms = Chatrooms}) ->
+  case dict:find(GroupName, Chatrooms) of
+    {ok, [Pid | _T]} ->
+      io:format("joint chatroom already joined"),
+      case catch chatroom:send_message(Pid, Message) of
+        #message_ok{} ->
+          {reply, #message_ok{result=sent}, State};
+        #message_error{reason = Reason, reason_message = ReasonMessage} ->
+          {reply, #message_error{reason = Reason, reason_message = ReasonMessage}, State};
+        Error ->
+          {reply, #message_error{reason = Error}, State}
+      end;
+    _ ->
+      io:format("access point not joined to room"),
+      {reply, #message_error{reason=notjoined}, State}
+  end;
 
 handle_call({connect}, {ClientPid, _Tag}, State = #state{client_pid = nil}) ->
 	monitor(process, ClientPid),
@@ -104,6 +136,17 @@ handle_call({joinchatroom, ChatroomName}, {ClientPid, _Tag}, State = #state{chat
   end);
 handle_call(_Request, _From, State) ->
   {reply, ok, State}.
+
+handle_cast({receivemessages, Messages, Group}, State = #state{client_pid = ClientPid}) ->
+  io:format("handle_cast receivemessages"),
+  case catch ircclient:receive_messages(ClientPid, Messages, Group) of
+    #message_ok{} ->
+      {noreply, State};
+    #message_error{} ->
+      {noreply, State};
+    _Error ->
+      {noreply, State}
+  end;
 
 handle_cast({logout, LoginName, Reason}, State) ->
   {noreply, loggedout_i(LoginName, State, Reason)};
