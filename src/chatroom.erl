@@ -45,7 +45,7 @@ start_link(Name) ->
   gen_server:start_link(?MODULE, [Name], []).
 
 join(Pid, From, UserName) ->
-  io:format("chatroom call joingroup pid is ~p~n",[Pid]),
+  io:format("chatroom call joingroup pid is ~p ~p ~p~n",[Pid, From, UserName]),
   gen_server:call(Pid, {joingroup, From, UserName}).
 
 %%%===================================================================
@@ -84,7 +84,8 @@ init([Name]) ->
   {noreply, NewState :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term(), Reply :: term(), NewState :: #state{}} |
   {stop, Reason :: term(), NewState :: #state{}}).
-handle_call({joingroup, _AccessPointPid, _UserName}, _From, State) ->
+handle_call({joingroup, _AccessPointPid, _UserName}, From, State) ->
+  io:format("chatroom handle_call joingroup pid is ~p~n",[From]),
   {reply, #message_ok{result = joined}, State};
 
 handle_call(_Request, _From, State) ->
