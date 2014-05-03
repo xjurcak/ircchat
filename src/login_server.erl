@@ -6,7 +6,7 @@
 %% API
 -export([start_link/0]).
 
--export([start/0, login/1, login/2, logout/1, touch/1, is_logged/1]).
+-export([start/0, start_slave/0, get_listener/1, login/1, login/2, logout/1, touch/1, is_logged/1]).
 
 -export([clean_loop/0]).
 
@@ -30,6 +30,8 @@
 %% starter behaviour
 start() ->
 	login_server_sup:start().
+start_slave() ->
+ 	login_server_sup:start_slave().
 
 % should not be used for server start!!!
 start_link() ->
@@ -39,6 +41,9 @@ login(LoginName) ->
   login(LoginName, nil).
 login(LoginName, Listener) ->
   gen_server:call({global, ?LOGIN_SERVER_GLOBAL}, {login, LoginName, Listener}).
+
+get_listener(LoginName) ->
+  gen_server:call({global, ?LOGIN_SERVER_GLOBAL}, {get_listener, LoginName}).
 
 logout(LoginName) ->
   gen_server:call({global, ?LOGIN_SERVER_GLOBAL}, {logout, LoginName}).
@@ -65,6 +70,8 @@ handle_call({logout, LoginName}, _From, State = #state{}) ->
   {reply, logout_i(LoginName), State};
 handle_call({login, LoginName, Listener}, _From, State = #state{}) ->
   {reply, login_i(LoginName, Listener), State};
+handle_call({get_listener, LoginName}, _From, State = #state{}) ->
+  {reply, get_listener_i(LoginName), State};
 handle_call(_, _From, State = #state{}) ->
   {reply,  #message_error{reason=undef_method}, State}.
 
@@ -83,6 +90,16 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+get_listener_i(LoginName) ->
+	transac_return(mnesia:transaction(fun() ->
+	  case mnesia:read(?LOGINS_TABLE, LoginName) of
+	    [Login] ->
+		  Login#login.listener;
+	    _->
+		  not_logged
+	  end
+	end)).
+  
 is_logged_i(LoginName) ->
 	transac_return(mnesia:transaction(fun() ->
 	  case mnesia:read(?LOGINS_TABLE, LoginName) of
@@ -133,7 +150,7 @@ clean() ->
 		Guard = {'<', '$2', timestamp(now())},
 		Result = '$1',
 		Logins = mnesia:select(?LOGINS_TABLE,[{MatchHead, [Guard], [Result]}]),
-		%io:format("~p~n", [[Logins, MatchHead, Guard, Result]]),
+		%error_logger:info_report("~p~n", [[Logins, MatchHead, Guard, Result]]),
 		[expire(Login) || Login <- Logins]
 	end)).
 

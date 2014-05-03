@@ -4,7 +4,7 @@
 -behaviour(starter).
 
 %% API
--export([start/0, get_access_point/0, register_access_point_manager/1, all_managers/0]).
+-export([start/0, start_slave/0, get_access_point/0, register_access_point_manager/1, all_managers/0]).
 
 -export([start_link/0]).
 
@@ -26,6 +26,9 @@
 %%%===================================================================
 start() ->
 	lookup_sup:start().
+	
+start_slave() ->
+	lookup_sup:start_slave().
 
 % should not be used for server start!!!
 start_link() ->
@@ -85,7 +88,7 @@ insert(Managers, Node) ->
 	  transac_return(mnesia:transaction(fun() -> mnesia:write({?MANAGERS_TABLE, key_from_node(Node), Node}) end)),
       sets:add_element(Node, Managers);
     _->
-      io:format("Manager already in qeue"),
+      error_logger:info_report("Manager already in qeue"),
       Managers
   end.
 

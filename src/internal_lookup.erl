@@ -4,7 +4,7 @@
 
 
 %% API
--export([start/0, start_link/0, all_managers/0, find_room_or_create/1]).
+-export([start/0, start_slave/0, start_link/0, all_managers/0, find_room_or_create/1]).
 -export([register_chrm/1, unregister_chrm/1, get_chrm/1, exists/0]).
 
 %% gen_server callbacks
@@ -50,6 +50,9 @@ find_room_or_create(ChatroomName) ->
 %% starter behaviour
 start() ->
 	internal_lookup_supervisor:start().
+	
+start_slave() ->
+	internal_lookup_supervisor:start_slave().
 
 % should not be used for server start!!!
 start_link() ->
@@ -116,7 +119,7 @@ insert( Node, Managers) ->
       transac_return(mnesia:transaction(fun() -> mnesia:write({?MANAGERS_TABLE, key_from_node(Node), Node}) end)),
       sets:add_element(Node, Managers);
     _->
-      io:format("Manager already in qeue"),
+      error_logger:info_report("Manager already in qeue"),
       Managers
   end.
 

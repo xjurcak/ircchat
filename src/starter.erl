@@ -1,7 +1,7 @@
 -module(starter).
 
 %% API
--export([start/2,start/3]).
+-export([start/2,start/3,ping/1]).
 
 %% Behaviour
 -export([behaviour_info/1]).
@@ -23,4 +23,18 @@ start(Module, Node, Count) ->
 		pang ->
 			timer:sleep(5000),
 			start(Node, Count-1)
+	end.
+
+ping(Node) ->
+	ping(Node, 10).
+
+ping(_Node, 0)->
+	failed;
+ping(Node, Count)->
+	case net_adm:ping(Node) of
+		pong ->
+			ok;
+		pang ->
+			timer:sleep(5000),
+			ping(Node, Count-1)
 	end.

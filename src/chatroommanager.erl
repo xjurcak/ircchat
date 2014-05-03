@@ -13,18 +13,18 @@
 
 
 %% API
--export([start_link/0, get_chat_room/2, nodes_from_netnodes/2, create_room/2]).
+-export([start/0, get_chat_room/2, nodes_from_netnodes/2, create_room/2]).
 
-start_link() ->
-  chatroommanager_sup:start_link(10).
+start() ->
+  chatroommanager_sup:start(10).
 
 create_room([ChatManager | T], ChatName) ->
   case create_room(ChatManager, ChatName) of
     #message_ok{} = Message ->
-      io:format("create room ~p~n", [Message]),
+      error_logger:info_report("create room ~p~n", [Message]),
       Message;
     _ ->
-      io:format("create room error"),
+      error_logger:info_report("create room error"),
       create_room(T, ChatName)
   end;
 
@@ -32,7 +32,7 @@ create_room([], _ChatName) ->
   nochatroom;
 
 create_room(Node = #netnode{}, Name) ->
-  io:format("create room"),
+  error_logger:info_report("create room"),
   chatroommanager_serv:create_room(Node, Name).
 
 

@@ -12,7 +12,7 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/1]).
+-export([start/1]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -23,16 +23,10 @@
 %%% API functions
 %%%===================================================================
 
-%%--------------------------------------------------------------------
-%% @doc
-%% Starts the supervisor
-%%
-%% @end
-%%--------------------------------------------------------------------
--spec(start_link(Limit :: integer()) ->
-  {ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
-start_link(Limit) ->
-  supervisor:start_link(?MODULE, {Limit}).
+start(Limit) ->
+  {ok, Pid} = supervisor:start_link(?MODULE, {Limit}),
+  unlink(Pid),
+  Pid.
 
 %%%===================================================================
 %%% Supervisor callbacks

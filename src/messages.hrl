@@ -8,6 +8,9 @@
 %%%-------------------------------------------------------------------
 -author("xjurcak").
 
+
+-record(chat_message, {message, timestamp, from}).
+
 -record(message_ok, { result = nil :: any() }).
 -record(message_error, { reason :: atom(), reason_message = '' :: term() }).
 

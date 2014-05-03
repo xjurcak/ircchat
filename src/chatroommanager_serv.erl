@@ -163,7 +163,7 @@ handle_cast(_Request, State) ->
   {stop, Reason :: term(), NewState :: #state{}}).
 
 handle_info({'DOWN', Ref, process, _Pid, _}, S = #state{refs=Refs}) ->
-  io:format("received down msg~n"),
+  error_logger:info_report("received down msg~n"),
   case dict:find(Ref, Refs) of
     {ok, [Value | _T]} ->
       handle_down_worker(Ref, S, Value);
@@ -184,7 +184,7 @@ handle_info({start_worker_supervisor, Sup}, S = #state{}) ->
   {noreply, S#state{sup=Pid}};
 
 handle_info(Info, State) ->
-  io:format("Unknown msg: ~p~n", [Info]),
+  error_logger:info_report("Unknown msg: ~p~n", [Info]),
   {noreply, State}.
 
 %%--------------------------------------------------------------------

@@ -10,7 +10,7 @@
 -author("xjurcak").
 
 %% API
--export([start_link/0]).
+-export([start/0]).
 
-start_link() ->
-  accesspointmanager_sup:start_link(10).
+start() ->
+  accesspointmanager_sup:start(10).

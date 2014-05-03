@@ -25,15 +25,16 @@ init(State) ->
 	apply(State#state.module, on_before_backup, [State#state.node]).
 
 loop(State) ->
-	%io:format("Watching on node ~p?~p process ~p.!!!~n", [node(), self(), State#state.g_name]),
+	error_logger:info_report("Watching on node ~p?~p process ~p.!!!~n", [node(), self(), State#state.g_name]),
 	_Result = check_and_spawn(State),
 	timer:sleep(5000),
 	loop(State).
 
 check_and_spawn(State) ->
+	global:sync(),
 	case global:whereis_name(State#state.g_name) of
 		undefined ->
-			io:format("Process '~s' undefined. Trying to spawn one.!!!~n", [State#state.g_name]),
+			error_logger:info_report("Process '~s' undefined. Trying to spawn one.!!!~n", [State#state.g_name]),
 			spawn_it(State);
 		_ ->
 			continue
@@ -46,6 +47,6 @@ spawn_it(State) ->
 		undefined ->
 			couldnt_register;	
 		_ ->
-			io:format("Registered ~p as '~p' with ~p!!!~n", [Pid, State#state.g_name, State]),
+			error_logger:info_report("Registered ~p as '~p' with ~p!!!~n", [Pid, State#state.g_name, State]),
 			spawned
 	end.

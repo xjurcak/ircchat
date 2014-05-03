@@ -12,7 +12,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/1, keep_alive/1, login/2, connect/1, join_chatroom/2, send_message/3, receive_messages/3]).
+-export([start_link/1, keep_alive/1, login/2, connect/1, join_chatroom/2, send_message/3, send_message_user/3, receive_messages/3]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -25,20 +25,20 @@
 -define(EXPIRATION_TIME, 30).
 -include("messages.hrl").
 
--record(state, { chatrooms, username, chatrooms_ref, client_pid=nil, client_exp=nil, logged_in_as=nil}).
+-record(state, { name, chatrooms, username, chatrooms_ref, client_pid=nil, client_exp=nil, logged_in_as=nil}).
 %%%===================================================================
 %%% API
 %%%===================================================================
 
 start_link(Name) ->
-  io:format(Name),
-  gen_server:start_link({local, Name}, ?MODULE, [], []).
+  error_logger:info_report(Name),
+  gen_server:start_link({local, Name}, ?MODULE, [Name], []).
 
-receive_messages([Pid| T], Messages, Group) ->
-  io:format("receive_massages multicall pidlist ~p~n", [Pid]),
-  case catch gen_server:cast(Pid, {receivemessages, Messages, Group})of
+receive_messages([Pid| T], Message, Group) ->
+  error_logger:info_report("receive_massages multicall pidlist ~p~n", [Pid]),
+  case catch gen_server:cast(Pid, {receivemessages, Message, Group})of
     _ ->
-      receive_messages(T, Messages, Group)
+      receive_messages(T, Message, Group)
   end;
 
 receive_messages([], _Messages, _Group) ->
@@ -50,6 +50,8 @@ join_chatroom(#netnode{name = Name, node = Node}, ChatroomName) ->
 login(#netnode{name = Name, node = Node}, LoginName) ->
   gen_server:call({Name, Node}, {login, LoginName}).
 
+send_message_user(#netnode{name = Name, node = Node}, Message, UserName)->
+  gen_server:call({Name, Node}, {sendmessageuser, Message, UserName}).
 send_message(#netnode{name = Name, node = Node}, Message, GroupName)->
   gen_server:call({Name, Node}, {sendmessagegroup, Message, GroupName}).
 
@@ -64,15 +66,27 @@ keep_alive(#netnode{name = Name, node = Node}) ->
 %%% gen_server callbacks
 %%%===================================================================
 
-init([]) ->
+init([Name]) ->
   timer:send_interval(5000,self(),{check_expiration}),
   timer:send_interval(5000,self(),{touch}),
-  {ok, #state{ chatrooms = dict:new(), chatrooms_ref = dict:new()}, 100000}.
+  {ok, #state{name=Name, chatrooms = dict:new(), chatrooms_ref = dict:new()}, 100000}.
 
-handle_call({sendmessagegroup, Message, GroupName}, {ClientPid, _Tag}, State = #state{client_pid = ClientPid, chatrooms = Chatrooms}) ->
+handle_call({sendmessageuser, Message, UserName}, _From, State = #state{client_pid = ClientPid}) ->
+  case login_server:get_listener(UserName) of
+    #message_ok{result=not_logged}->
+	    {reply, #message_error{reason = user_is_not_logged_in}, State};
+    #message_ok{result=Listener} ->
+		NewMessage = #chat_message{message=Message,timestamp=calendar:local_time(),from=State#state.logged_in_as},
+		accesspoint:receive_messages([Listener], NewMessage, users_to_group(UserName, State#state.logged_in_as)),
+		client_receive_messages_i(ClientPid, NewMessage, users_to_group(UserName, State#state.logged_in_as), State),
+		{reply, #message_ok{result=sent}, State};
+	_->
+	    {reply, #message_error{reason = something_goes_wrong}, State}
+  end;
+handle_call({sendmessagegroup, Message, GroupName}, _From, State = #state{chatrooms = Chatrooms}) ->
   case dict:find(GroupName, Chatrooms) of
     {ok, [Pid | _T]} ->
-      io:format("joint chatroom already joined"),
+      error_logger:info_report("joint chatroom already joined"),
       case catch chatroom:send_message(Pid, Message) of
         #message_ok{} ->
           {reply, #message_ok{result=sent}, State};
@@ -82,12 +96,12 @@ handle_call({sendmessagegroup, Message, GroupName}, {ClientPid, _Tag}, State = #
           {reply, #message_error{reason = Error}, State}
       end;
     _ ->
-      io:format("access point not joined to room"),
+      error_logger:info_report("access point not joined to room"),
       {reply, #message_error{reason=notjoined}, State}
   end;
 
 handle_call({connect}, {ClientPid, _Tag}, State = #state{client_pid = nil}) ->
-	{reply, #message_ok{result={connected}}, State#state{client_pid = ClientPid}};
+	{reply, #message_ok{result={connected}}, State#state{client_pid = ClientPid, client_exp=timestamp(now())+?EXPIRATION_TIME}};
 handle_call({connect}, {ClientPid, _Tag}, State = #state{client_pid = ClientPid}) ->
 	{reply, #message_error{reason={already_connected}}, State};
 handle_call({connect}, _From, State) ->
@@ -97,7 +111,7 @@ handle_call({login, LoginName}, {ClientPid, _Tag}, State = #state{logged_in_as=L
 %%   Node = internal_lookup:
 	case LoggedInAs of
 		nil ->
-			case login_server:login(LoginName, self()) of
+			case login_server:login(LoginName, {State#state.name, node()}) of
 				#message_ok{result=logged} = Result ->
 					NewState = State#state{logged_in_as=LoginName},
 					{reply, Result, NewState};
@@ -113,13 +127,13 @@ handle_call({joinchatroom, ChatroomName}, {ClientPid, _Tag}, State = #state{chat
   login_checked(State, fun() -> 
 	  case dict:find(ChatroomName, Chatrooms) of
     {ok, _Pid} ->
-      io:format("joint chatroom already joined"),
+      error_logger:info_report("joint chatroom already joined"),
       {reply, #message_ok{ result = allreadyinchatroom}, State};
     _ ->
-      io:format("joint chatroom find room or create"),
+      error_logger:info_report("joint chatroom find room or create"),
       case catch internal_lookup:find_room_or_create(ChatroomName) of
         #message_ok{result = Pid} ->
-          io:format("joint chatroom join chatroom"),
+          error_logger:info_report("joint chatroom join chatroom"),
           case catch chatroom:join(Pid, self(), LoginName) of
             #message_ok{} ->
               Ref = erlang:monitor(process, Pid),
@@ -146,15 +160,7 @@ handle_call(_Request, _From, State) ->
   {reply, ok, State}.
 
 handle_cast({receivemessages, Messages, Group}, State = #state{client_pid = ClientPid}) ->
-  io:format("handle_cast receivemessages"),
-  case catch ircclient:receive_messages(ClientPid, Messages, Group) of
-    #message_ok{} ->
-      {noreply, State};
-    #message_error{} ->
-      {noreply, State};
-    _Error ->
-      {noreply, State}
-  end;
+  client_receive_messages_i(ClientPid, Messages, Group, State);
 
 handle_cast({logout, LoginName, Reason}, State) ->
   {noreply, loggedout_i(LoginName, State, Reason)};
@@ -162,7 +168,7 @@ handle_cast(_Request, State) ->
   {noreply, State}.
 
 handle_info({'DOWN', Ref, process, _Pid, _}, S = #state{chatrooms =  Chatrooms, chatrooms_ref = R}) ->
-  io:format("received down msg~n"),
+  error_logger:info_report("received down msg~n"),
 
 
   case dict:find(Ref, R) of
@@ -181,16 +187,17 @@ handle_info({check_expiration}, State = #state{client_exp=nil}) ->
   {noreply, State};
 handle_info({check_expiration}, State = #state{client_exp=ClientExp})->
  Now =  timestamp(now()),
+ error_logger:info_report("~p ~p~n",[ClientExp,Now]),
  if 
     ClientExp < Now -> 
-      {noreply, clear_client(State)};
+      {stop, normal, clear_client(State)};
 	true ->
 	  {noreply, State}
  end;
 
 handle_info({touch}, State = #state{logged_in_as=nil}) ->
   {noreply, State};
-handle_info({touch}, State = #state{client_exp=LoggedInAs}) ->
+handle_info({touch}, State = #state{logged_in_as=LoggedInAs}) ->
   touch(LoggedInAs),
   {noreply, State};
 
@@ -223,8 +230,13 @@ is_logged_in(#state{logged_in_as=nil}) ->
 is_logged_in(#state{logged_in_as=_}) ->
 	true.
 
+	 
+client_receive_messages_i(ClientPid, Messages, Group, State) ->
+	client:receive_messages(ClientPid, Messages, Group),
+	{noreply, State}.
+	
 loggedout_i(LoginName, State, _Reason) ->
-	io:format("expired ~p~n", LoginName),
+	error_logger:info_report("expired ~p~n", LoginName),
 	State#state{logged_in_as = nil}.
 
 touch(LoginName) ->
@@ -232,3 +244,6 @@ touch(LoginName) ->
 
 timestamp({Megasecs, Secs, _}) ->
      (Megasecs * 1000000) + Secs.
+
+users_to_group(N1, N2) ->
+	list_to_atom(lists:concat(lists:sort([N1, N2]))).

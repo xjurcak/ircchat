@@ -29,7 +29,6 @@
                   messages = []}).
 
 -record(user, { accesspoinpid :: pid(), name :: term(), ref}).
--record(message, {message, timestamp, from}).
 
 -include("messages.hrl").
 
@@ -46,11 +45,11 @@
 -spec(start_link(Name :: term()) ->
   {ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
 start_link(Name) ->
-  io:format(Name),
+  error_logger:info_report(Name),
   gen_server:start_link(?MODULE, [Name], []).
 
 join(Pid, From, UserName) ->
-  io:format("chatroom call joingroup pid is ~p ~p ~p~n",[Pid, From, UserName]),
+  error_logger:info_report("chatroom call joingroup pid is ~p ~p ~p~n",[Pid, From, UserName]),
   gen_server:call(Pid, {joingroup, From, UserName}).
 
 send_message(Pid, Message)->
@@ -96,17 +95,16 @@ init([Name]) ->
   {stop, Reason :: term(), Reply :: term(), NewState :: #state{}} |
   {stop, Reason :: term(), NewState :: #state{}}).
 
-handle_call({sendmessage, Message}, {Pid, _Tag}, State = #state{ messages = Massages, joinedUsers = Users, name = Name}) ->
- io:format("send message, from Pid: ~p~n Users: ~p~n", [Pid, Users]),
+handle_call({sendmessage, Message}, {Pid, _Tag}, State = #state{ joinedUsers = Users, name = Name}) ->
+ error_logger:info_report("send message, from Pid: ~p~n Users: ~p~n", [Pid, Users]),
  case find_name( Users, Pid) of
    {ok, UserName} ->
-     io:format("send message, Name found: ~p~n", [UserName]),
-     NewMessages = [#message{ message = Message, timestamp = calendar:local_time(),  from = UserName} | Massages],
-     case catch accesspoint:receive_messages(pid_list_from_users(Users, []), NewMessages, Name) of
+     error_logger:info_report("send message, Name found: ~p~n", [UserName]),
+     case catch accesspoint:receive_messages(pid_list_from_users(Users, []), #chat_message{ message = Message, timestamp = calendar:local_time(),  from = UserName}, Name) of
        Result ->
-          io:format("resend message Result, ~p~n", [Result])
+          error_logger:info_report("resend message Result, ~p~n", [Result])
      end,
-     {reply, #message_ok{result=NewMessages}, State#state{messages = NewMessages}};
+     {reply, #message_ok{}, State};
   Error ->
      {reply, #message_error{reason = Error}, State}
  end;
@@ -115,7 +113,7 @@ handle_call({getusers}, _From, State = #state{ joinedUsers = Users}) ->
   {reply, #message_ok{result = Users}, State};
 
 handle_call({joingroup, AccessPointPid, UserName}, From, State = #state{ joinedUsers = Users}) ->
-  io:format("chatroom handle_call joingroup pid is ~p~n",[From]),
+  error_logger:info_report("chatroom handle_call joingroup pid is ~p~n",[From]),
   case insert_user_if_not_exist(AccessPointPid, UserName, Users) of
     nameaccesspointpidconflict ->
       {reply, #message_error{reason = nameaccesspointpidconflict}, State};
@@ -159,7 +157,7 @@ handle_cast(_Request, State) ->
   {stop, Reason :: term(), NewState :: #state{}}).
 
 handle_info({'DOWN', Ref, process, _Pid, _}, S = #state{ joinedUsers = Users}) ->
-  io:format("chatroom received down msg~n"),
+  error_logger:info_report("chatroom received down msg~n"),
   {noreply, S#state{ joinedUsers = remove_user(Users, Ref, [])}};
 
 handle_info(_Info, State) ->
