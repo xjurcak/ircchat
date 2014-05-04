@@ -228,9 +228,11 @@ print_msgs([Msg | T]) ->
 	print_msgs(T).
 
 print_msg(Group, Msg) ->
-	io:format("~p > [~p]~p: ~p~n", [Group, Msg#chat_message.timestamp, Msg#chat_message.from, Msg#chat_message.message]).
+	{{Y, Mo, D}, {H, Mi, S}} = Msg#chat_message.timestamp,
+	io:format("~p > [~2.10.0B/~2.10.0B/~B ~2.10.0B:~2.10.0B:~2.10.0B] ~10s: ~p~n", [Group, Mo, D, Y, H, Mi, S, Msg#chat_message.from, Msg#chat_message.message]).
 print_msg(Msg) ->
-	io:format("[~p]~p: ~p~n", [Msg#chat_message.timestamp, Msg#chat_message.from, Msg#chat_message.message]).
+	{{Y, Mo, D}, {H, Mi, S}} = Msg#chat_message.timestamp,
+	io:format("[~2.10.0B/~2.10.0B/~B ~2.10.0B:~2.10.0B:~2.10.0B] ~10s: ~p~n", [Mo, D, Y, H, Mi, S, Msg#chat_message.from, Msg#chat_message.message]).
 
 users_to_group(N1, N2) ->
 	list_to_atom(lists:concat(lists:sort([N1, N2]))).

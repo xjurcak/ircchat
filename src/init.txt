@@ -39,4 +39,3 @@ rpc:call('chrm1@MiroslavV-PC', chatroommanager, start, []).
 timer:sleep(2000),
 global:sync(),
 rpc:call('chrm2@MiroslavV-PC', chatroommanager, start, []).
-io:format("~p~n", [finished]).

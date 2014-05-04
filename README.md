@@ -38,13 +38,15 @@ IRC chat
 * Pre pridanie nového klienta je nutné spustiť novú pomenovanú evm a pingnúť jeden z existujúcich uzlov.
 
 **Príkazy:**   
-* Vytvorenie klienta:   
+* Klient:   
 
 	\> client:start_link\. 				% spustenie klienta - jeden node jeden klient   
 	\> client:login(LoginName).			% prihlásenie do systému   
 	\> client:j2g(GroupName).			% pripojenie sa do skupiny   
 	\> client:s2g(Message, GroupName).	% poslanie správy do skupiny   
-	\> client:s2u(Message, UserName).	% poslanie správy inému klientovi   
+	\> client:s2u(Message, UserName).	% poslanie správy inému klientovi  
+	\> client:msgs_g(GroupName).		% vypýsanie správ prijatých z danej skupiny
+	\> client:msgs_u(UserName).			% vypýsanie správ prijatých od daného používateľa
 
 * Spustenie komponent:   
 
