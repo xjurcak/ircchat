@@ -1,11 +1,11 @@
 IRC chat
 =======
 
-**Kompilácia:**
+**Kompilácia:**   
 1. spusti erlang vm
 
 	./src > erl
-	1> make:all\.
+	1> make:all().
 	
 2. spusti príkaz ./src/start.cmd. Výstupom by v základnej konzolby my mal vyzerať nasledovne:
 
