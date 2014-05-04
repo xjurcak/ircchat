@@ -9,24 +9,34 @@ starter:ping('adm1@MiroslavV-PC').
 starter:ping('adm2@MiroslavV-PC').
 starter:ping('chrm1@MiroslavV-PC').
 starter:ping('chrm2@MiroslavV-PC').
+timer:sleep(2000),
 global:sync(),
 rpc:call('l1@MiroslavV-PC', lookup, start, []).
+timer:sleep(2000),
 global:sync(),
 rpc:call('l2@MiroslavV-PC', lookup, start_slave, []).
+timer:sleep(2000),
 global:sync(),
 rpc:call('il1@MiroslavV-PC', internal_lookup, start, []).
+timer:sleep(2000),
 global:sync(),
 rpc:call('il2@MiroslavV-PC', internal_lookup, start_slave, []).
+timer:sleep(2000),
 global:sync(),
 rpc:call('ls1@MiroslavV-PC', login_server, start, []).
+timer:sleep(2000),
 global:sync(),
 rpc:call('ls2@MiroslavV-PC', login_server, start_slave, []).
+timer:sleep(2000),
 global:sync(),
 rpc:call('adm1@MiroslavV-PC', accesspointmanager, start, []).
+timer:sleep(2000),
 global:sync(),
 rpc:call('adm2@MiroslavV-PC', accesspointmanager, start, []).
+timer:sleep(2000),
 global:sync(),
 rpc:call('chrm1@MiroslavV-PC', chatroommanager, start, []).
+timer:sleep(2000),
 global:sync(),
 rpc:call('chrm2@MiroslavV-PC', chatroommanager, start, []).
-io:format("~p~n", finished).
+io:format("~p~n", [finished]).
