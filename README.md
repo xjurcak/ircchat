@@ -8,7 +8,7 @@ IRC chat
 	1> make:all\.
 	
 2. spusti príkaz ./src/start.cmd. Výstupom by v základnej konzolby my mal vyzerať nasledovne:
-	
+
 	1> ok   
 	2> ok   
 	3> ok   
@@ -39,7 +39,7 @@ IRC chat
 
 **Príkazy:**   
 * Vytvorenie klienta:   
-	
+
 	\> client:start_link\. 				% spustenie klienta - jeden node jeden klient   
 	\> client:login(LoginName).			% prihlásenie do systému   
 	\> client:j2g(GroupName).			% pripojenie sa do skupiny   
@@ -47,12 +47,13 @@ IRC chat
 	\> client:s2u(Message, UserName).	% poslanie správy inému klientovi   
 
 * Spustenie komponent:   
-	
+
 	\> login_server:start\.				% spustí login server (1N:1C)   
 	\> lookup:start\.					% spustí lookup server (1N:1C)   
 	\> internal_lookup:start\.			% spustí internal lookup server (1N:1C)   
 	\> accesspointmanager:start_link\.	% spustí APM (1N:1C); predpokladom je    spustený lookup & login server   
 	\> chatroommanager:start_link\.		% spustí CHRM (1N:1C); predpokladom je    spustený internal lookup   
 	
-  ostatné príkazy:
+* ostatné príkazy:   
+
 	\> net_adm:ping(Node)				% pripojí sa do siete prostr   edníctvom uzla Node. Kladná odpoveď = pong.
